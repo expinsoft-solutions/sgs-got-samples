@@ -63,6 +63,27 @@ _LARAVEL_SEM = threading.Semaphore(1)
 #         print(f"❌ [LARAVEL] {stem_type} error: {e}")
      
      
+def complete_job(job_id: str, total_queued: int, server_url: str = None):
+    """
+    Tell the server the batch is done and how many stems were queued.
+    Triggers zip rebuild per genre.
+    """
+    url = server_url or "https://springgreen-mandrill-515031.hostingersite.com"
+    try:
+        response = requests.post(
+            f"{url}/api/vault/jobs/{job_id}/complete",
+            json={"total_queued": total_queued},
+            timeout=30,
+        )
+        if response.status_code == 200:
+            data = response.json()
+            print(f"✅ [JOB] {job_id} complete — {data.get('stemCount',0)} stems, {data.get('zipJobsQueued',0)} zip jobs queued")
+        else:
+            print(f"⚠️ [JOB] complete returned {response.status_code}: {response.text[:200]}")
+    except Exception as e:
+        print(f"⚠️ [JOB] complete call failed: {e}")
+
+
 def upload_to_laravel(audio_path, track, stem_type, bpm, key, genre,
                       album_name=None, album_type='single', release_date=None,
                       specific_genre=None, job_id=None,
@@ -130,8 +151,76 @@ def upload_to_laravel(audio_path, track, stem_type, bpm, key, genre,
 
     # All non-success responses raise so process_stem's retry loop handles them
     raise Exception(f"HTTP {response.status_code}: {response.text[:300]}")
-        
-            
+
+
+def upload_to_server(audio_path, track, stem_type, bpm, key, genre,
+                     album_name=None, album_type='single', release_date=None,
+                     specific_genre=None, job_id=None,
+                     spotify_id=None, cover_art_url=None, is_free=False,
+                     server_url=None):
+    """
+    Upload single stem to the new SGS API (Fastify).
+    Drop-in replacement for upload_to_laravel.
+    RAISES on failure — caller handles retries.
+    """
+    base_url = server_url or "https://yourdomain.com"  # update to production domain
+
+    if not os.path.exists(audio_path):
+        raise FileNotFoundError(f"Audio file not found: {audio_path}")
+
+    try:
+        bpm_val = round(float(bpm), 1) if bpm and bpm != 0 else 120
+        if bpm_val < 40 or bpm_val > 220:
+            bpm_val = 120
+        bpm_val = int(bpm_val) if bpm_val == int(bpm_val) else bpm_val
+    except (TypeError, ValueError):
+        bpm_val = 120
+
+    key_value = key if key and key != "Unknown" else "C Maj"
+    genre_value = genre if genre else "Hip-Hop"
+    stem_type_value = stem_type.capitalize()
+
+    resolved_cover_url = cover_art_url or track.get('img') or track.get('cover_art_url')
+    if resolved_cover_url and not str(resolved_cover_url).startswith("http"):
+        resolved_cover_url = track.get('img') or track.get('cover_art_url') or None
+
+    with open(audio_path, 'rb') as audio_f:
+        files = {'file': (os.path.basename(audio_path), audio_f, 'audio/mpeg')}
+        data = {
+            'title':         track.get('name', 'Unknown'),
+            'artist':        track.get('artist', 'Unknown'),
+            'stem_type':     stem_type_value,
+            'bpm':           bpm_val,
+            'key':           key_value,
+            'genres':        genre_value,   # new API uses 'genres' (accepts single or CSV)
+            'album_name':    album_name or track.get('album_name', track.get('name', 'Unknown')),
+            'album_type':    album_type or track.get('album_type', 'single'),
+            'release_date':  release_date or track.get('release_date'),
+            'job_id':        job_id or track.get('job_id'),
+            'cover_art_url': resolved_cover_url,
+        }
+        data = {k: v for k, v in data.items() if v is not None and v != ''}
+
+        response = requests.post(
+            f"{base_url}/api/upload/single",
+            files=files,
+            data=data,
+            timeout=60,
+        )
+
+    if response.status_code in (200, 201):
+        resp = response.json()
+        print(f"✅ [SGS] Uploaded {stem_type_value} — stem id: {resp.get('stem', {}).get('id', '?')}")
+        return
+
+    if response.status_code == 409:
+        resp = response.json()
+        print(f"⚠️ [SGS] Duplicate skipped: {resp.get('message', '')}")
+        return  # duplicate is not a failure
+
+    raise Exception(f"HTTP {response.status_code}: {response.text[:300]}")
+
+
 def _safe_component(name: str, max_len: int = 60) -> str:
     """
     Sanitize a path component for Windows:
@@ -613,7 +702,7 @@ class Content_download_main(ContentBase):
             with _LARAVEL_SEM:
                 for attempt in range(1, 6):  # up to 5 attempts
                     try:
-                        upload_to_laravel(
+                        upload_to_server(
                             audio_path,
                             track,
                             stem_type,
@@ -623,11 +712,8 @@ class Content_download_main(ContentBase):
                             album_name=track.get('album_name'),
                             album_type=track.get('album_type', 'single'),
                             release_date=track.get('release_date'),
-                            specific_genre=track.get('specific_genre'),
                             job_id=self.args.get('job_id'),
-                            spotify_id=track.get('spotify_id') or track.get('id'),
                             cover_art_url=track.get('img') or track.get('cover_art_url'),
-                            is_free=track.get('is_free', False),
                         )
                         break  # success
                     except Exception as e:
@@ -886,7 +972,13 @@ class Content_download_main(ContentBase):
         selected_stems_map = self.args.get("selected_stems", {})
         channel_key = self.args.get("channel", "")
         selected_stems_for_channel = selected_stems_map.get(channel_key, list(self.STEM_DEFINITIONS.keys()))
-        
+
+        # Count stems that will actually be uploaded for this track
+        stems_to_upload = [
+            st for st in self.STEM_DEFINITIONS
+            if st.lower() in [s.lower() for s in selected_stems_for_channel]
+        ]
+
         for idx, (stem_type, config) in enumerate(self.STEM_DEFINITIONS.items(), start=1):
             stem_lower = stem_type.lower()
             if stem_lower not in [s.lower() for s in selected_stems_for_channel]:
@@ -895,6 +987,11 @@ class Content_download_main(ContentBase):
             base_step = 2 + (idx - 1) * 4 + 1
             success = self.process_stem(stem_type, config, track, thumb_path, base_step, total_steps)
             processed_any = processed_any or success
+
+        # Notify server the job batch is complete + how many stems were sent
+        job_id = self.args.get('job_id')
+        if job_id and processed_any:
+            complete_job(job_id, total_queued=len(stems_to_upload))
 
         if not processed_any:
             self.fail_progress_with_meta(" No stems were processed for the main channel", "Acapella", self.channel_label, track)
