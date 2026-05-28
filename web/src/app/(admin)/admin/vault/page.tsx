@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from 'react'
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
+const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:7626'
 
 type VaultStatus = {
-  id: string; genre: string; status: string
+  id: string; genreId: string; genre: { name: string; slug: string }; status: string
   stemCount: number; fileSizeBytes: string | null
   builtAt: string | null; errorMessage: string | null
 }
@@ -34,9 +34,9 @@ export default function AdminVault() {
 
   useEffect(() => { load() }, [])
 
-  async function rebuild(genre: string) {
-    setRebuilding(genre)
-    await fetch(`${API}/api/admin/vault/${encodeURIComponent(genre)}/rebuild`, { method: 'POST' })
+  async function rebuild(genreId: string) {
+    setRebuilding(genreId)
+    await fetch(`${API}/api/admin/vault/${encodeURIComponent(genreId)}/rebuild`, { method: 'POST' })
     await load()
     setRebuilding(null)
   }
@@ -57,14 +57,14 @@ export default function AdminVault() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>
         {statuses.map((s) => (
-          <div key={s.genre} className="card">
+          <div key={s.genreId} className="card">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_COLOR[s.status] ?? 'var(--mu2)', flexShrink: 0 }} />
               <h3 style={{
                 fontFamily: 'var(--font-exo2)', fontWeight: 400, fontSize: '0.9rem',
                 letterSpacing: '0.07em', textTransform: 'uppercase', flex: 1,
               }}>
-                {s.genre}
+                {s.genre?.name ?? s.genreId}
               </h3>
               <span style={{
                 fontFamily: 'var(--font-exo2)', fontSize: '0.65rem',
@@ -99,10 +99,10 @@ export default function AdminVault() {
             <button
               className="btn-ghost"
               style={{ width: '100%', justifyContent: 'center', fontSize: '0.76rem' }}
-              disabled={rebuilding === s.genre}
-              onClick={() => rebuild(s.genre)}
+              disabled={rebuilding === s.genreId}
+              onClick={() => rebuild(s.genreId)}
             >
-              {rebuilding === s.genre ? 'Queued…' : '↺ Rebuild ZIP'}
+              {rebuilding === s.genreId ? 'Queued…' : '↺ Rebuild ZIP'}
             </button>
           </div>
         ))}

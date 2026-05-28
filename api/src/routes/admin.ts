@@ -231,19 +231,22 @@ export async function adminRoutes(app: FastifyInstance) {
   // ── Vault Operations ──────────────────────────────────────────────────────
 
   app.get('/admin/vault/status', async (_req, reply) => {
-    const statuses = await prisma.vaultZipStatus.findMany({ orderBy: { genre: 'asc' } })
+    const statuses = await prisma.vaultZipStatus.findMany({
+      orderBy: { genre: { name: 'asc' } },
+      include: { genre: { select: { name: true, slug: true } } },
+    })
     return reply.send({ statuses })
   })
 
-  app.post('/admin/vault/:genre/rebuild', async (req, reply) => {
-    const { genre } = req.params as { genre: string }
-    const { decision, reason } = await shouldRebuildZip(genre)
+  app.post('/admin/vault/:genreId/rebuild', async (req, reply) => {
+    const { genreId } = req.params as { genreId: string }
+    const { decision, reason } = await shouldRebuildZip(genreId)
     if (decision === 'already_building') {
       return reply.send({ queued: false, reason })
     }
-    await markGenreStale(genre)
-    await enqueueZip(genre)
-    return reply.send({ queued: true, genre, reason })
+    await markGenreStale(genreId)
+    await enqueueZip(genreId)
+    return reply.send({ queued: true, genreId, reason })
   })
 
   app.post('/admin/stems/process-deletes', async (_req, reply) => {
