@@ -1,0 +1,23 @@
+{
+  "name": "sgs-v2",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n web,api -c cyan,magenta \"npm run dev --prefix web\" \"npm run dev --prefix api\"",
+    "dev:web": "npm run dev --prefix web",
+    "dev:api": "npm run dev --prefix api",
+    "build": "npm run build --prefix web && npm run build --prefix api",
+    "build:web": "npm run build --prefix web",
+    "build:api": "npm run build --prefix api",
+    "start": "concurrently -n web,api -c cyan,magenta \"npm run start --prefix web\" \"npm run start --prefix api\"",
+    "start:web": "npm run start --prefix web",
+    "start:api": "npm run start --prefix api",
+    "db:push": "npm run db:push --prefix api",
+    "db:migrate": "npm run db:migrate --prefix api",
+    "db:studio": "npm run db:studio --prefix api",
+    "db:generate": "npm run db:generate --prefix api",
+    "install:all": "npm install --prefix web && npm install --prefix api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}

@@ -1,0 +1,212 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id                    String    @id // matches Supabase auth UID
+  email                 String    @unique
+  name                  String?
+  avatarUrl             String?
+  tier                  String    @default("free") // free | paid | admin
+  webAccess             Boolean   @default(false)
+  isActive              Boolean   @default(true)
+  downloadCount         Int       @default(0)
+  lastDownloadAt        DateTime?
+  downloadCooldownUntil DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  downloads        Download[]
+  purchases        Purchase[]
+  downloadTracking UserDownloadTracking[]
+
+  @@map("users")
+}
+
+// ── Genre ─────────────────────────────────────────────────────────────────────
+
+model Genre {
+  id          String   @id @default(uuid())
+  name        String   @unique  // display name e.g. "Hip-Hop"
+  slug        String   @unique  // url-safe e.g. "hip-hop"
+  description String?
+  tags        Json?
+  isHidden    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  stems      StemGenre[]
+  zipStatus  VaultZipStatus?
+  updateZips VaultUpdateZip[]
+  uploadJobs UploadJob[]
+
+  @@map("genres")
+}
+
+// ── Stem ──────────────────────────────────────────────────────────────────────
+
+model Stem {
+  id               String    @id @default(uuid())
+  title            String
+  artist           String
+  stemType         String    // Acapella | Drums | Bass | Melody | Instrumental
+  bpm              Decimal?  @db.Decimal(5, 1)
+  musicalKey       String?
+  albumName        String?
+  albumType        String    @default("single") // album | single
+  releaseDate      DateTime?
+  coverArtUrl      String?
+  coverArtPath     String?
+  storagePath      String    // R2 key: vault-master/...
+  previewPath      String?   // R2 key: vault-previews/...
+  duration         Int?      // seconds
+  isVisible        Boolean   @default(false)
+  isPendingPublish Boolean   @default(true)
+  isLocked         Boolean   @default(false)
+  isFree           Boolean   @default(false)
+  isDuplicate      Boolean   @default(false)
+  pendingDelete    Boolean   @default(false)
+  playlistOrder    Int       @default(0)
+  uploadedFromJobId String?
+  vaultPublishedAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  uploadJob        UploadJob?            @relation(fields: [uploadedFromJobId], references: [jobId])
+  genres           StemGenre[]
+  downloads        Download[]
+  downloadTracking UserDownloadTracking[]
+
+  @@index([isVisible])
+  @@index([artist])
+  @@index([uploadedFromJobId])
+  @@map("stems")
+}
+
+// Many-to-many: Stem ↔ Genre
+model StemGenre {
+  stemId  String
+  genreId String
+
+  stem  Stem  @relation(fields: [stemId], references: [id], onDelete: Cascade)
+  genre Genre @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@id([stemId, genreId])
+  @@map("stem_genres")
+}
+
+// ── Upload Job ────────────────────────────────────────────────────────────────
+
+model UploadJob {
+  id          String    @id @default(uuid())
+  jobId       String    @unique
+  status      String    @default("pending") // pending | uploading | complete | cancelled | failed
+  stemCount   Int       @default(0)
+  totalQueued Int       @default(0)  // total files client said it will send
+  genreId     String?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  genre    Genre?           @relation(fields: [genreId], references: [id])
+  stems    Stem[]
+  deltaZips VaultUpdateZip[]
+
+  @@map("upload_jobs")
+}
+
+// ── Vault ZIP Status (per genre) ──────────────────────────────────────────────
+
+model VaultZipStatus {
+  id            String    @id @default(uuid())
+  genreId       String    @unique
+  status        String    @default("building") // building | stale | ready | failed
+  r2Key         String?
+  fileSizeBytes BigInt?
+  stemCount     Int       @default(0)
+  builtAt       DateTime?
+  errorMessage  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  genre Genre @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@map("vault_zip_statuses")
+}
+
+// ── Vault Delta ZIPs (per job batch, per genre) ───────────────────────────────
+
+model VaultUpdateZip {
+  id            String   @id @default(uuid())
+  jobId         String
+  genreId       String
+  r2Key         String
+  stemCount     Int      @default(0)
+  fileSizeBytes BigInt?
+  builtAt       DateTime @default(now())
+
+  uploadJob UploadJob @relation(fields: [jobId], references: [jobId])
+  genre     Genre     @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, genreId])
+  @@index([genreId])
+  @@map("vault_update_zips")
+}
+
+// ── Downloads ─────────────────────────────────────────────────────────────────
+
+model Download {
+  id           String   @id @default(uuid())
+  stemId       String
+  userId       String
+  ipAddress    String?
+  downloadedAt DateTime @default(now())
+
+  stem Stem @relation(fields: [stemId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("downloads")
+}
+
+model UserDownloadTracking {
+  id           String   @id @default(uuid())
+  userId       String
+  stemId       String
+  ipAddress    String?
+  downloadedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stem Stem @relation(fields: [stemId], references: [id], onDelete: Cascade)
+
+  @@map("user_download_tracking")
+}
+
+model Purchase {
+  id        String   @id @default(uuid())
+  userId    String
+  stripeId  String?  @unique
+  amount    Int      // cents
+  currency  String   @default("usd")
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("purchases")
+}
+
+model AdminAuditLog {
+  id        String   @id @default(uuid())
+  adminId   String
+  action    String
+  target    String?
+  payload   Json?
+  createdAt DateTime @default(now())
+
+  @@map("admin_audit_logs")
+}
