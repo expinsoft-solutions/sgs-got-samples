@@ -370,9 +370,10 @@ export function LibraryClient() {
         {/* Access strip */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: 'rgba(96,116,255,.055)', border: '1px solid rgba(96,116,255,.13)', borderRadius: 7, padding: '7px 14px', marginBottom: 10 }}>
           <span style={{ fontSize: 12, color: 'var(--mu)', flex: 1 }}>
-            <strong style={{ color: 'var(--tx)' }}>Free Access</strong>. Browse a limited selection. Stems past the free limit are locked.
+            <strong style={{ color: 'var(--tx)' }}>Free Access</strong> — Browse and preview stems. Get{' '}
+            <Link href="/pricing" style={{ color: 'var(--acc)', fontWeight: 600 }}>Full Access</Link>
+            {' '}to unlock everything.
           </span>
-          <Link href="/pricing" className="fa-btn"><span>Unlock Full Access</span></Link>
         </div>
 
         {/* Top bar */}

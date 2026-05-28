@@ -1,74 +1,129 @@
-export const metadata = { title: 'Pricing — Son Got Samples' }
+'use client'
+
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 export default function PricingPage() {
-  return (
-    <div style={{ maxWidth: 800, margin: '0 auto', padding: '60px 20px' }}>
-      <h1 style={{
-        fontFamily: 'var(--font-exo2)', fontWeight: 300, fontSize: '1.6rem',
-        letterSpacing: '0.08em', textTransform: 'uppercase',
-        textAlign: 'center', marginBottom: 8,
-      }}>Pricing</h1>
-      <p style={{ textAlign: 'center', color: 'var(--mu)', fontSize: '0.88rem', marginBottom: 48 }}>
-        Choose your plan
-      </p>
+  const router = useRouter()
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 20 }}>
-        {[
-          {
-            name: 'Free',
-            price: '$0',
-            period: 'forever',
-            features: ['Browse limited library', 'Stream previews', 'Download free stems'],
-            cta: 'Get Started',
-            accent: false,
-          },
-          {
-            name: 'Full Access',
-            price: '$19',
-            period: '/month',
-            features: ['Full stems library', 'Download everything', 'Vault ZIP packs', 'Update delta ZIPs'],
-            cta: 'Upgrade Now',
-            accent: true,
-          },
-        ].map((plan) => (
-          <div
-            key={plan.name}
-            className="card"
-            style={{
-              border: plan.accent ? '1px solid var(--acc)' : '1px solid var(--di)',
-              background: plan.accent ? 'rgba(104,120,255,.05)' : 'var(--pb)',
-            }}
-          >
-            <h2 style={{
-              fontFamily: 'var(--font-exo2)', fontWeight: 400, fontSize: '0.9rem',
-              letterSpacing: '0.1em', textTransform: 'uppercase',
-              color: plan.accent ? 'var(--acc)' : 'var(--mu)',
-              marginBottom: 16,
-            }}>
-              {plan.name}
-            </h2>
-            <div style={{ marginBottom: 20 }}>
-              <span style={{ fontFamily: 'var(--font-exo2)', fontSize: '2.2rem', fontWeight: 300, color: 'var(--tx)' }}>
-                {plan.price}
-              </span>
-              <span style={{ fontSize: '0.82rem', color: 'var(--mu)' }}>{plan.period}</span>
+  const dot = (
+    <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--acc)', opacity: 0.6, flexShrink: 0, display: 'inline-block' }} />
+  )
+
+  function li(text: string) {
+    return (
+      <li style={{ fontSize: 12, color: 'var(--mu)', padding: '3px 0', borderBottom: '1px solid rgba(255,255,255,.05)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        {dot}{text}
+      </li>
+    )
+  }
+
+  return (
+    <>
+      <style>{`
+        @keyframes pmspin{to{transform:rotate(360deg)}}
+        .price-card{background:linear-gradient(180deg,var(--pb),var(--pb2));border:1px solid rgba(96,116,255,.08);border-radius:14px;padding:26px 20px 22px;display:flex;flex-direction:column;position:relative;overflow:hidden;transition:all .3s ease;}
+        .price-card.feat{background:linear-gradient(180deg,rgba(96,116,255,.07),rgba(96,116,255,.025));border:1px solid rgba(96,116,255,.15);}
+        .price-card:hover{transform:translateY(-4px);border-color:rgba(96,116,255,.5)!important;box-shadow:0 8px 30px rgba(96,116,255,.15);}
+        .price-card.feat:hover{border-color:rgba(96,116,255,.6)!important;box-shadow:0 8px 35px rgba(96,116,255,.2);}
+        .price-btn{width:100%;height:40px;border-radius:9px;font-size:13px;font-weight:600;border:1px solid rgba(96,116,255,.2);background:rgba(96,116,255,.08);color:var(--tx);cursor:pointer;transition:all .3s ease;font-family:inherit;}
+        .price-btn:hover{background:rgba(96,116,255,.2)!important;border-color:rgba(96,116,255,.5)!important;transform:translateY(-2px);box-shadow:0 4px 15px rgba(96,116,255,.2);}
+        .price-card.feat .price-btn{background:var(--acc);border:1px solid var(--acc);color:#fff;}
+        .price-card.feat .price-btn:hover{background:#7083ff!important;border-color:#7083ff!important;}
+        @media(max-width:640px){.pricing-grid{grid-template-columns:1fr!important;max-width:400px;margin-left:auto;margin-right:auto;}}
+        @media(max-width:768px){.pw{padding:0 16px 40px!important;}.phero{padding:16px 16px 14px!important;}}
+      `}</style>
+
+      <div className="pw" style={{ maxWidth: 1060, margin: '0 auto', padding: '0 24px 60px' }}>
+
+        {/* Hero */}
+        <div className="phero" style={{ textAlign: 'center', padding: '24px 20px 20px' }}>
+          <div style={{
+            display: 'inline-block', fontFamily: 'var(--font-exo2)', fontSize: '.65rem',
+            letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--acc)',
+            border: '1px solid rgba(96,116,255,.22)', borderRadius: 20,
+            padding: '5px 16px', background: 'rgba(96,116,255,.07)', marginBottom: 14,
+          }}>
+            Choose Your Access
+          </div>
+          <h1 style={{
+            fontFamily: 'var(--font-exo2)', fontWeight: 200,
+            fontSize: 'clamp(22px,3vw,36px)', letterSpacing: '.02em', margin: '0 0 6px', color: 'var(--tx)',
+          }}>
+            One-Time Access. No Subscriptions.
+          </h1>
+          <p style={{ fontSize: 13, color: 'var(--mu)', maxWidth: 400, margin: '0 auto', fontWeight: 300 }}>
+            Pay once, no renewals. Get into the library your way.
+          </p>
+        </div>
+
+        {/* Cards */}
+        <div className="pricing-grid" style={{
+          display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 16,
+          marginBottom: 24, maxWidth: 720, marginLeft: 'auto', marginRight: 'auto',
+          alignItems: 'stretch',
+        }}>
+
+          {/* Free */}
+          <div className="price-card">
+            <div style={{ fontFamily: 'var(--font-exo2)', fontSize: '.6rem', letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--acc)', marginBottom: 7 }}>FREE ACCESS</div>
+            <div style={{ fontSize: '2rem', fontWeight: 700, margin: '6px 0 2px', color: 'var(--tx)', letterSpacing: '-.02em' }}>
+              $0 <sub style={{ fontSize: '.85rem', fontWeight: 400, color: 'var(--mu)', letterSpacing: 0 }}>/ forever</sub>
             </div>
-            <ul style={{ listStyle: 'none', marginBottom: 24 }}>
-              {plan.features.map((f) => (
-                <li key={f} style={{ fontSize: '0.84rem', color: 'var(--mu)', padding: '5px 0', borderBottom: '1px solid var(--di)' }}>
-                  <span style={{ color: 'var(--acc)', marginRight: 8 }}>✓</span>{f}
-                </li>
-              ))}
+            <p style={{ fontSize: 12.5, color: 'var(--mu)', lineHeight: 1.6, margin: '6px 0 10px' }}>
+              Explore a curated selection with no commitment required.
+            </p>
+            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 12px' }}>
+              {li('Limited stem library preview')}
+              {li('Browse selected free stems')}
+              {li('Filter by genre, BPM, key & stem type')}
+              {li('Stream and preview available stems')}
+            </ul>
+            <div style={{ flex: 1 }} />
+            <Link href="/library" className="price-btn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              Explore Free Access
+            </Link>
+          </div>
+
+          {/* Full */}
+          <div className="price-card feat">
+            {/* Best Value ribbon */}
+            <div style={{
+              position: 'absolute', top: 14, right: -26,
+              background: 'var(--acc)', color: '#fff',
+              fontSize: 9, letterSpacing: '.1em', textTransform: 'uppercase',
+              padding: '4px 30px', transform: 'rotate(45deg)', fontWeight: 700,
+            }}>
+              Best Value
+            </div>
+
+            <div style={{ fontFamily: 'var(--font-exo2)', fontSize: '.6rem', letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--acc)', marginBottom: 7 }}>FULL ACCESS</div>
+            <div style={{ fontSize: '2rem', fontWeight: 700, margin: '6px 0 2px', color: 'var(--tx)', letterSpacing: '-.02em' }}>
+              $35 <sub style={{ fontSize: '.85rem', fontWeight: 400, color: 'var(--mu)', letterSpacing: 0 }}>/ one-time</sub>
+            </div>
+            <p style={{ fontSize: 12.5, color: 'var(--mu)', lineHeight: 1.6, margin: '6px 0 10px', flex: 1 }}>
+              Web access plus the complete library. Own 20,000+ stems permanently.
+            </p>
+            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 12px' }}>
+              {li('Full library access')}
+              {li('Unlimited browsing across all stems')}
+              {li('Full stem downloads')}
+              {li('Vault access')}
+              {li('Bulk download packs')}
+              {li('Lifetime access')}
+              {li('Future library updates included')}
+              {li('One-time payment — no subscription')}
             </ul>
             <button
-              className={plan.accent ? 'btn-acc' : 'btn-ghost'}
-              style={{ width: '100%', justifyContent: 'center' }}
+              className="price-btn"
+              onClick={() => router.push('/register?plan=full')}
             >
-              {plan.cta}
+              Get Full Access
             </button>
           </div>
-        ))}
+
+        </div>
       </div>
-    </div>
+    </>
   )
 }

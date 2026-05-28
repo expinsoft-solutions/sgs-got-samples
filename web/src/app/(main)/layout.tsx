@@ -7,7 +7,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     <>
       <SpaceBg />
       <Header />
-      <main style={{ marginTop: 'var(--hh)', flex: 1, minHeight: 0 }}>
+      <main style={{ marginTop: 'var(--hh)' }}>
         {children}
       </main>
       <Footer />
