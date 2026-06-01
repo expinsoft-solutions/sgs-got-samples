@@ -1,9 +1,9 @@
-// Queue connections are lazy — Redis only required when zip phase is enabled.
-// Import and use getZipQueue() only when REDIS_ENABLED=true.
-
 import { Queue } from 'bullmq'
-import { redis } from './redis.js'
 
+// Lazy — only connects to Redis when zip phase is enabled.
 export function getZipQueue(): Queue {
-  return new Queue('zip', { connection: redis })
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { createClient } = require('ioredis')
+  const redis = new createClient({ host: process.env.REDIS_HOST ?? 'localhost', port: Number(process.env.REDIS_PORT ?? 6379), maxRetriesPerRequest: null })
+  return new Queue('zip', { connection: redis as never })
 }

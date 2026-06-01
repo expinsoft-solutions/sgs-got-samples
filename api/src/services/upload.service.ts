@@ -1,4 +1,4 @@
-import { writeFile, mkdir } from 'fs/promises'
+import { writeFile, mkdir, unlink } from 'fs/promises'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { prisma } from '../lib/prisma.js'
@@ -7,6 +7,7 @@ import { uploadAudio, masterKey } from '../lib/storage.js'
 import { stemStoragePath, stemFileName } from '../lib/stem-path.js'
 import { markGenreStale } from './vault.service.js'
 import { enqueueZip } from '../workers/zip.worker.js'
+import { saveToLocal } from './version-zip.service.js'
 
 const TMP_DIR = process.env.TMP_DIR ?? '/tmp/sgs-uploads'
 
@@ -78,6 +79,15 @@ export async function uploadStem(input: StemInput) {
   const bpm = input.bpm ?? meta.bpm
   const musicalKey = input.key ?? meta.key ?? 'C Maj'
 
+  // Ensure UploadJob record exists before creating stem (FK constraint)
+  if (input.jobId) {
+    await prisma.uploadJob.upsert({
+      where: { jobId: input.jobId },
+      create: { jobId: input.jobId, status: 'uploading' },
+      update: {},
+    })
+  }
+
   // Resolve all genre IDs
   const genreIds = await Promise.all(input.genres.map(resolveGenre))
 
@@ -113,7 +123,15 @@ export async function uploadStem(input: StemInput) {
     title: stem.title,
   })}/${stemFileName({ artist: stem.artist, title: stem.title, stemType: stem.stemType, bpm: Number(stem.bpm), musicalKey: stem.musicalKey })}`
 
+  // Upload to R2 (sgs-music)
   await uploadAudio(tmpPath, masterKey(storagePath))
+
+  // Copy to VM local dir for fast zip building (genre-slugified)
+  const genreSlug = input.genres[0].toLowerCase().replace(/[&]/g, '-and-').replace(/[\s/]+/g, '-').replace(/[^a-z0-9-]/g, '')
+  const localFileName = storagePath.split('/').pop() ?? `${randomUUID()}.mp3`
+  await saveToLocal(tmpPath, genreSlug, localFileName).catch(() => {}) // non-fatal
+
+  await unlink(tmpPath).catch(() => {})
 
   await prisma.stem.update({
     where: { id: stem.id },
@@ -124,6 +142,8 @@ export async function uploadStem(input: StemInput) {
 }
 
 export async function completeJob(jobId: string) {
+  const reviewMode = process.env.REVIEW_MODE === 'true'
+
   const stems = await prisma.stem.findMany({
     where: { uploadedFromJobId: jobId, isPendingPublish: true },
     include: { genres: { select: { genreId: true } } },
@@ -131,20 +151,28 @@ export async function completeJob(jobId: string) {
 
   if (stems.length === 0) return { found: false }
 
-  // Collect unique genre IDs across all stems in this job
-  const genreIds = [...new Set(stems.flatMap((s) => s.genres.map((g) => g.genreId)))]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const genreIds: string[] = [...new Set((stems as any[]).flatMap((s: any) => s.genres.map((g: any) => g.genreId as string)))]
 
-  await prisma.stem.updateMany({
-    where: { uploadedFromJobId: jobId, isPendingPublish: true },
-    data: { isPendingPublish: false, isVisible: true, vaultPublishedAt: new Date() },
-  })
-
-  // Mark stale + enqueue zip per genre
   let zipJobsQueued = 0
-  for (const genreId of genreIds) {
-    await markGenreStale(genreId)
-    await enqueueZip(genreId, jobId)
-    zipJobsQueued++
+
+  if (reviewMode) {
+    // Staged for admin review — hidden until approved in /admin/review
+    await prisma.stem.updateMany({
+      where: { uploadedFromJobId: jobId, isPendingPublish: true },
+      data: { isPendingPublish: false, isVisible: false },
+    })
+  } else {
+    // Auto-publish
+    await prisma.stem.updateMany({
+      where: { uploadedFromJobId: jobId, isPendingPublish: true },
+      data: { isPendingPublish: false, isVisible: true, vaultPublishedAt: new Date() },
+    })
+    for (const genreId of genreIds) {
+      await markGenreStale(genreId)
+      await enqueueZip(genreId, jobId)
+      zipJobsQueued++
+    }
   }
 
   await prisma.uploadJob.updateMany({
@@ -157,6 +185,7 @@ export async function completeJob(jobId: string) {
     stemCount: stems.length,
     genreCount: genreIds.length,
     zipJobsQueued,
+    reviewMode,
   }
 }
 

@@ -99,6 +99,27 @@ export default function LoginPage() {
         {' · '}
         <Link href="/forgot-password" style={{ color: 'var(--mu)' }}>Forgot password?</Link>
       </div>
+
+      {/* Admin section */}
+      <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--di)' }}>
+        <p style={{
+          fontFamily: 'var(--font-exo2)', fontSize: '0.65rem', letterSpacing: '.12em',
+          textTransform: 'uppercase', color: 'var(--mu2)', marginBottom: 10, textAlign: 'center',
+        }}>Admin</p>
+        <Link href="/admin" style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+          width: '100%', height: 36, borderRadius: 7,
+          background: 'rgba(96,116,255,.07)', border: '1px solid rgba(96,116,255,.22)',
+          color: '#8097ff', fontSize: 12, fontFamily: 'var(--font-exo2)',
+          letterSpacing: '.07em', textTransform: 'uppercase', transition: 'border-color .15s',
+        }}>
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <circle cx="8" cy="5" r="3" />
+            <path d="M2 14c0-3.31 2.69-6 6-6s6 2.69 6 6" />
+          </svg>
+          Quick Admin Login
+        </Link>
+      </div>
     </div>
   )
 }

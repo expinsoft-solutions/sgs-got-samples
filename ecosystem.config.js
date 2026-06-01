@@ -1,4 +1,4 @@
-const NODE_BIN = '/home/remote/.nvm/versions/node/v20.0.0/bin'; // update node version after install
+const NODE_BIN = '/home/remote/.nvm/versions/node/v23.11.1/bin';
 
 module.exports = {
   apps: [

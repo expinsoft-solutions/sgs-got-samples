@@ -130,7 +130,8 @@ export async function uploadRoutes(app: FastifyInstance) {
 
     // Report zip queue depth
     const boss = await getBoss()
-    const queueSize = await boss.getQueueSize(ZIP_QUEUE).catch(() => null)
+    const queueStats = await boss.getQueueStats(ZIP_QUEUE).catch(() => null)
+    const queueSize = (queueStats as Record<string, number> | null)?.createdOn ?? null
 
     return reply.send({
       success: true,

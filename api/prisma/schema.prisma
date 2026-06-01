@@ -18,6 +18,7 @@ model User {
   isActive              Boolean   @default(true)
   downloadCount         Int       @default(0)
   lastDownloadAt        DateTime?
+  lastDownloadVersion   DateTime? // vaultPublishedAt of latest stem in last vault pack built for this user
   downloadCooldownUntil DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
@@ -41,12 +42,31 @@ model Genre {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  stems      StemGenre[]
-  zipStatus  VaultZipStatus?
-  updateZips VaultUpdateZip[]
-  uploadJobs UploadJob[]
+  stems       StemGenre[]
+  zipStatus   VaultZipStatus?
+  updateZips  VaultUpdateZip[]
+  versionZips VaultVersionZip[]
+  uploadJobs  UploadJob[]
 
   @@map("genres")
+}
+
+// ── Vault Version ZIPs (on-demand, per user version window) ──────────────────
+
+model VaultVersionZip {
+  id            String   @id @default(uuid())
+  genreId       String
+  fromVersion   DateTime // vaultPublishedAt >= fromVersion
+  toVersion     DateTime // vaultPublishedAt <= toVersion
+  localPath     String   // absolute VM path: /data/vault/zips/{slug}/{fromTs}-{toTs}.zip
+  stemCount     Int      @default(0)
+  fileSizeBytes BigInt?
+  builtAt       DateTime @default(now())
+
+  genre Genre @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@unique([genreId, fromVersion, toVersion])
+  @@map("vault_version_zips")
 }
 
 // ── Stem ──────────────────────────────────────────────────────────────────────
@@ -72,6 +92,7 @@ model Stem {
   isFree           Boolean   @default(false)
   isDuplicate      Boolean   @default(false)
   pendingDelete    Boolean   @default(false)
+  deletedAt        DateTime? // set on soft delete, hard-deleted by cron after 3 days
   playlistOrder    Int       @default(0)
   uploadedFromJobId String?
   vaultPublishedAt DateTime?

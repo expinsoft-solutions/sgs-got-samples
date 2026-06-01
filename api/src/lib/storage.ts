@@ -5,10 +5,11 @@ import { createReadStream } from 'fs'
 import { r2, R2_MUSIC_BUCKET, R2_ZIPS_BUCKET } from './r2.js'
 
 // ── Key prefixes (within their respective buckets) ────────────────────────────
-export const MASTER_PREFIX   = 'vault-master'   // sgs-music/vault-master/...
-export const PREVIEW_PREFIX  = 'vault-previews' // sgs-music/vault-previews/...
-export const GENRE_ZIP_PREFIX  = 'genre'        // sgs-zips/genre/{name}-latest.zip
-export const UPDATE_ZIP_PREFIX = 'updates'      // sgs-zips/updates/{jobId}.zip
+export const MASTER_PREFIX        = 'vault-master'    // sgs-music/vault-master/...
+export const PREVIEW_PREFIX       = 'vault-previews'  // sgs-music/vault-previews/...
+export const GENRE_ZIP_PREFIX     = 'genre'           // sgs-zips/genre/{name}-latest.zip
+export const UPDATE_ZIP_PREFIX    = 'updates'         // sgs-zips/updates/{jobId}.zip
+export const VERSION_ZIP_PREFIX   = 'version-zips'    // sgs-zips/version-zips/{slug}/{from}-{to}.zip
 
 // ── Key builders ──────────────────────────────────────────────────────────────
 export function masterKey(storagePath: string): string {
@@ -25,6 +26,12 @@ export function genreZipKey(genre: string): string {
 
 export function updateZipKey(jobId: string): string {
   return `${UPDATE_ZIP_PREFIX}/${jobId}.zip`
+}
+
+export function versionZipKey(genreSlug: string, fromVersion: Date, toVersion: Date): string {
+  const from = fromVersion.getTime()
+  const to   = toVersion.getTime()
+  return `${VERSION_ZIP_PREFIX}/${genreSlug}/${from}-${to}.zip`
 }
 
 // ── Presigned URLs ────────────────────────────────────────────────────────────

@@ -1,9 +1,29 @@
 import type { FastifyInstance } from 'fastify'
+import { createReadStream, existsSync } from 'fs'
 import { prisma } from '../lib/prisma.js'
 import { getZipUrl } from '../lib/storage.js'
+import { createClient } from '@supabase/supabase-js'
+import {
+  getFromVersion,
+  getLatestVersion,
+  getOrBuildVersionZip,
+  invalidateGenreZips,
+} from '../services/version-zip.service.js'
+
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
+async function getUserFromRequest(req: { headers: { authorization?: string } }) {
+  const auth = req.headers.authorization
+  if (!auth?.startsWith('Bearer ')) return null
+  const { data: { user } } = await supabase.auth.getUser(auth.slice(7))
+  return user
+}
 
 export async function vaultRoutes(app: FastifyInstance) {
-  // GET /api/vault/genres
+  // GET /api/vault/genres — public genre stats
   app.get('/vault/genres', async (_req, reply) => {
     const statuses = await prisma.vaultZipStatus.findMany({
       orderBy: { genre: { name: 'asc' } },
@@ -25,19 +45,101 @@ export async function vaultRoutes(app: FastifyInstance) {
     return reply.send({ genres })
   })
 
-  // GET /api/vault/genres/:genre/download  — genre = slug or name
-  app.get('/vault/genres/:genre/download', async (req, reply) => {
-    const { genre } = req.params as { genre: string }
+  // POST /api/vault/prepare-download — called on login, returns per-genre version info
+  app.post('/vault/prepare-download', async (req, reply) => {
+    const user = await getUserFromRequest(req)
+    if (!user) return reply.code(401).send({ error: 'Unauthorised' })
 
-    const status = await prisma.vaultZipStatus.findFirst({
-      where: { genre: { OR: [{ name: genre }, { slug: genre }] } },
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { lastDownloadVersion: true, tier: true },
     })
-    if (!status || !status.r2Key || status.status === 'building') {
-      return reply.code(404).send({ error: 'ZIP not available yet' })
+    if (!dbUser) return reply.code(404).send({ error: 'User not found' })
+    if (dbUser.tier === 'free') return reply.code(403).send({ error: 'Upgrade required' })
+
+    const fromVersion = getFromVersion(dbUser.lastDownloadVersion)
+
+    // All visible genres
+    const genres = await prisma.genre.findMany({
+      where: {
+        isHidden: false,
+        stems: { some: { stem: { isVisible: true, deletedAt: null } } },
+      },
+      select: { id: true, name: true, slug: true },
+    })
+
+    const downloads: unknown[] = []
+    const upToDate: string[] = []
+    let maxToVersion: Date | null = null
+
+    for (const genre of genres) {
+      const toVersion = await getLatestVersion(genre.id)
+      if (!toVersion || fromVersion >= toVersion) {
+        upToDate.push(genre.name)
+        continue
+      }
+
+      if (!maxToVersion || toVersion > maxToVersion) maxToVersion = toVersion
+
+      downloads.push({
+        genreId: genre.id,
+        genre: genre.name,
+        slug: genre.slug,
+        fromVersion: fromVersion.toISOString(),
+        toVersion: toVersion.toISOString(),
+        ready: existsSync(
+          (await prisma.vaultVersionZip.findUnique({
+            where: { genreId_fromVersion_toVersion: { genreId: genre.id, fromVersion, toVersion } },
+          }))?.localPath ?? ''
+        ),
+      })
     }
 
-    const url = await getZipUrl(status.r2Key, 3600)
-    return reply.send({ url, fileSizeBytes: status.fileSizeBytes?.toString(), stemCount: status.stemCount })
+    // Update user's last download version to latest
+    if (maxToVersion) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { lastDownloadVersion: maxToVersion },
+      })
+    }
+
+    return reply.send({ downloads, upToDate })
+  })
+
+  // GET /api/vault/download/:slug?from=<ts>&to=<ts> — stream zip file
+  app.get('/vault/download/:slug', async (req, reply) => {
+    const user = await getUserFromRequest(req)
+    if (!user) return reply.code(401).send({ error: 'Unauthorised' })
+
+    const dbUser = await prisma.user.findUnique({ where: { id: user.id }, select: { tier: true } })
+    if (!dbUser || dbUser.tier === 'free') return reply.code(403).send({ error: 'Upgrade required' })
+
+    const { slug } = req.params as { slug: string }
+    const q = req.query as { from?: string; to?: string }
+
+    if (!q.from || !q.to) return reply.code(400).send({ error: 'from and to timestamps required' })
+
+    const genre = await prisma.genre.findUnique({ where: { slug }, select: { id: true, name: true, slug: true } })
+    if (!genre) return reply.code(404).send({ error: 'Genre not found' })
+
+    const fromVersion = new Date(parseInt(q.from))
+    const toVersion = new Date(parseInt(q.to))
+
+    if (isNaN(fromVersion.getTime()) || isNaN(toVersion.getTime())) {
+      return reply.code(400).send({ error: 'Invalid timestamps' })
+    }
+
+    try {
+      const localPath = await getOrBuildVersionZip(genre.id, genre.slug, fromVersion, toVersion)
+
+      const fileName = `${genre.slug}-${fromVersion.getTime()}-${toVersion.getTime()}.zip`
+      reply.header('Content-Disposition', `attachment; filename="${fileName}"`)
+      reply.header('Content-Type', 'application/zip')
+
+      return reply.send(createReadStream(localPath))
+    } catch (e) {
+      return reply.code(500).send({ error: (e as Error).message })
+    }
   })
 
   // GET /api/vault/updates
@@ -53,15 +155,5 @@ export async function vaultRoutes(app: FastifyInstance) {
       },
     })
     return reply.send({ updates })
-  })
-
-  // GET /api/vault/updates/:jobId/download
-  app.get('/vault/updates/:jobId/download', async (req, reply) => {
-    const { jobId } = req.params as { jobId: string }
-    const update = await prisma.vaultUpdateZip.findFirst({ where: { jobId } })
-    if (!update) return reply.code(404).send({ error: 'Update zip not found' })
-
-    const url = await getZipUrl(update.r2Key, 3600)
-    return reply.send({ url, stemCount: update.stemCount, fileSizeBytes: update.fileSizeBytes?.toString() })
   })
 }

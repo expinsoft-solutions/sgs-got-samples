@@ -10,15 +10,15 @@ export async function stemRoutes(app: FastifyInstance) {
     const limit = Math.min(100, parseInt(q.limit ?? '50'))
     const skip = (page - 1) * limit
 
-    const where: Record<string, unknown> = { isVisible: true, pendingDelete: false }
+    const where: Record<string, unknown> = { isVisible: true, pendingDelete: false, deletedAt: null }
 
-    if (q.genre) where.genre = q.genre
+    if (q.genre) where.genres = { some: { genre: { name: q.genre } } }
     if (q.stem_type) where.stemType = q.stem_type
     if (q.search) {
       where.OR = [
         { title: { contains: q.search, mode: 'insensitive' } },
         { artist: { contains: q.search, mode: 'insensitive' } },
-        { genre: { contains: q.search, mode: 'insensitive' } },
+        { genres: { some: { genre: { name: { contains: q.search, mode: 'insensitive' } } } } },
       ]
     }
     if (q.bpm_min || q.bpm_max) {
@@ -31,7 +31,6 @@ export async function stemRoutes(app: FastifyInstance) {
 
     const orderByMap: Record<string, unknown> = {
       recent: { createdAt: 'desc' },
-      genre: { genre: 'asc' },
       key: { musicalKey: 'asc' },
       bpmAsc: { bpm: 'asc' },
       bpmDesc: { bpm: 'desc' },
@@ -47,9 +46,10 @@ export async function stemRoutes(app: FastifyInstance) {
         take: limit,
         select: {
           id: true, title: true, artist: true, stemType: true,
-          bpm: true, musicalKey: true, genre: true, specificGenre: true,
-          albumName: true, duration: true, coverArtUrl: true,
+          bpm: true, musicalKey: true, albumName: true,
+          duration: true, coverArtUrl: true,
           isLocked: true, isFree: true, createdAt: true,
+          genres: { select: { genre: { select: { id: true, name: true } } } },
         },
       }),
       prisma.stem.count({ where }),
@@ -64,11 +64,10 @@ export async function stemRoutes(app: FastifyInstance) {
   // GET /api/stems/filter-options
   app.get('/stems/filter-options', async (_req, reply) => {
     const [genres, keys] = await Promise.all([
-      prisma.stem.findMany({
-        where: { isVisible: true },
-        select: { genre: true },
-        distinct: ['genre'],
-        orderBy: { genre: 'asc' },
+      prisma.genre.findMany({
+        where: { stems: { some: { stem: { isVisible: true } } } },
+        select: { name: true },
+        orderBy: { name: 'asc' },
       }),
       prisma.stem.findMany({
         where: { isVisible: true, musicalKey: { not: null } },
@@ -79,7 +78,7 @@ export async function stemRoutes(app: FastifyInstance) {
     ])
 
     return reply.send({
-      genres: genres.map((g) => g.genre).filter(Boolean),
+      genres: genres.map((g) => g.name),
       keys: keys.map((k) => k.musicalKey).filter(Boolean),
       stemTypes: ['Acapella', 'Drums', 'Bass', 'Melody', 'Instrumental'],
       bpmRanges: [
@@ -101,9 +100,10 @@ export async function stemRoutes(app: FastifyInstance) {
       where: { id, isVisible: true, pendingDelete: false },
       select: {
         id: true, title: true, artist: true, stemType: true,
-        bpm: true, musicalKey: true, genre: true, specificGenre: true,
-        albumName: true, albumType: true, duration: true, coverArtUrl: true,
+        bpm: true, musicalKey: true, albumName: true, albumType: true,
+        duration: true, coverArtUrl: true,
         isLocked: true, isFree: true, releaseDate: true, createdAt: true,
+        genres: { select: { genre: { select: { id: true, name: true } } } },
       },
     })
     if (!stem) return reply.code(404).send({ error: 'Not found' })
@@ -115,7 +115,7 @@ export async function stemRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string }
     const stem = await prisma.stem.findFirst({
       where: { id, isVisible: true },
-      select: { previewPath: true, storagePath: true },
+      select: { id: true, previewPath: true, storagePath: true },
     })
     if (!stem) return reply.code(404).send({ error: 'Not found' })
 

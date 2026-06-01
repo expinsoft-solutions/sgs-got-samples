@@ -1,24 +1,47 @@
 import type { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma.js'
 import { deleteAudio, masterKey } from '../lib/storage.js'
-import { shouldRebuildZip, shouldDeleteStem, executeStemDelete, processPendingDeletes, markGenreStale } from '../services/vault.service.js'
+import { shouldRebuildZip, shouldDeleteStem, executeStemDelete, processPendingDeletes, markGenreStale, purgeOldDeletes } from '../services/vault.service.js'
+import { invalidateGenreZips as invalidateVersionZips } from '../services/version-zip.service.js'
 import { enqueueZip } from '../workers/zip.worker.js'
 
 export async function adminRoutes(app: FastifyInstance) {
   // ── Stats ─────────────────────────────────────────────────────────────────
 
   app.get('/admin/stats', async (_req, reply) => {
-    const [totalStems, totalUsers, recentUploads] = await Promise.all([
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
+
+    const [
+      totalStems, visibleStems, hiddenStems, pendingStems,
+      totalUsers, freeUsers, paidUsers, adminUsers,
+      downloadsToday, recentUploads,
+    ] = await Promise.all([
+      prisma.stem.count(),
       prisma.stem.count({ where: { isVisible: true } }),
+      prisma.stem.count({ where: { isVisible: false, isPendingPublish: false } }),
+      prisma.stem.count({ where: { isPendingPublish: true } }),
       prisma.user.count(),
+      prisma.user.count({ where: { tier: 'free' } }),
+      prisma.user.count({ where: { tier: 'paid' } }),
+      prisma.user.count({ where: { tier: 'admin' } }),
+      prisma.download.count({ where: { downloadedAt: { gte: todayStart } } }),
       prisma.stem.findMany({
         where: { isVisible: true },
         orderBy: { createdAt: 'desc' },
         take: 10,
-        select: { id: true, title: true, artist: true, genre: true, createdAt: true },
+        select: { id: true, title: true, artist: true, genres: { select: { genre: { select: { name: true } } } }, createdAt: true },
       }),
     ])
-    return reply.send({ totalStems, totalUsers, recentUploads })
+
+    return reply.send({
+      stems: { total: totalStems, visible: visibleStems, hidden: hiddenStems, pending: pendingStems },
+      users: { total: totalUsers, free: freeUsers, paid: paidUsers, admin: adminUsers },
+      downloadsToday,
+      recentUploads: recentUploads.map(s => ({
+        ...s,
+        genre: s.genres[0]?.genre?.name ?? '—',
+      })),
+    })
   })
 
   // ── Stems ─────────────────────────────────────────────────────────────────
@@ -35,7 +58,7 @@ export async function adminRoutes(app: FastifyInstance) {
         { artist: { contains: q.search, mode: 'insensitive' } },
       ]
     }
-    if (q.genre) where.genre = q.genre
+    if (q.genre) where.genres = { some: { genre: { name: q.genre } } }
     if (q.visible !== undefined) where.isVisible = q.visible === 'true'
 
     const [stems, total] = await Promise.all([
@@ -73,18 +96,36 @@ export async function adminRoutes(app: FastifyInstance) {
     })
   })
 
-  // PUT /api/admin/stems/:id/genres — replace genres for a stem
+  // PUT /api/admin/stems/:id/genres — replace genres for a stem + invalidate caches
   app.put('/admin/stems/:id/genres', async (req, reply) => {
     const { id } = req.params as { id: string }
     const { genreIds } = req.body as { genreIds: string[] }
+
+    // Get old genres before replacing (for cache invalidation)
+    const oldGenres = await prisma.stemGenre.findMany({
+      where: { stemId: id },
+      include: { genre: { select: { id: true, slug: true } } },
+    })
+
     await prisma.stemGenre.deleteMany({ where: { stemId: id } })
     await prisma.stemGenre.createMany({
       data: genreIds.map((genreId) => ({ stemId: id, genreId })),
     })
+
     const genres = await prisma.genre.findMany({
       where: { id: { in: genreIds } },
-      select: { id: true, name: true },
+      select: { id: true, name: true, slug: true },
     })
+
+    // Invalidate version zip caches for old + new genres
+    const allAffected = [
+      ...oldGenres.map(g => ({ id: g.genre.id, slug: g.genre.slug })),
+      ...genres.map(g => ({ id: g.id, slug: g.slug })),
+    ]
+    for (const { id: gId, slug } of allAffected) {
+      invalidateVersionZips(gId, slug).catch(() => {})
+    }
+
     return reply.send({ genres })
   })
 
@@ -136,7 +177,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const stems = await prisma.stem.findMany({
       where: { id: { in: ids } },
-      select: { id: true, storagePath: true, genre: true },
+      select: { id: true, storagePath: true, genres: { select: { genreId: true } } },
     })
 
     // Soft delete + queue R2 cleanup
@@ -145,11 +186,11 @@ export async function adminRoutes(app: FastifyInstance) {
       data: { isVisible: false, pendingDelete: true },
     })
 
-    // Queue R2 deletes + zip rebuilds per genre
-    const genres = [...new Set(stems.map((s) => s.genre))]
-    for (const genre of genres) {
-      await markGenreStale(genre)
-      await enqueueZip(genre)
+    // Queue zip rebuilds per genre
+    const genreIds = [...new Set(stems.flatMap((s) => s.genres.map((g) => g.genreId)))]
+    for (const genreId of genreIds) {
+      await markGenreStale(genreId)
+      await enqueueZip(genreId)
     }
 
     // Fire-and-forget R2 deletes
@@ -163,6 +204,72 @@ export async function adminRoutes(app: FastifyInstance) {
   })
 
   // ── Customers ────────────────────────────────────────────────────────────
+
+  // POST /api/admin/customers/import-csv
+  app.post('/admin/customers/import-csv', async (req, reply) => {
+    const data = await req.file()
+    if (!data) return reply.code(400).send({ success: false, message: 'No file provided' })
+
+    const ext = data.filename.split('.').pop()?.toLowerCase()
+    if (!['csv', 'txt'].includes(ext ?? '')) {
+      return reply.code(422).send({ success: false, message: 'Please upload a .csv file' })
+    }
+
+    const buffer = await data.toBuffer()
+    // Strip UTF-8 BOM
+    const text = buffer.toString('utf-8').replace(/^﻿/, '')
+    const lines = text.split(/\r?\n/).filter(l => l.trim())
+
+    if (lines.length < 2) {
+      return reply.code(422).send({ success: false, message: 'CSV has no data rows' })
+    }
+
+    // Parse header
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''))
+    const emailIdx = headers.indexOf('email')
+    if (emailIdx === -1) {
+      return reply.code(422).send({ success: false, message: `CSV must have an "email" column. Found: ${headers.join(', ')}` })
+    }
+
+    const nameIdx   = headers.indexOf('name')
+    const tierIdx   = headers.findIndex(h => h === 'tier' || h === 'plan_tier')
+    const statusIdx = headers.indexOf('status')
+
+    const VALID_TIERS = ['free', 'paid', 'admin']
+
+    let imported = 0, skipped = 0, failed = 0
+    const errors: string[] = []
+
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',').map(c => c.trim().replace(/^["']|["']$/g, ''))
+      if (!cols.some(Boolean)) continue
+
+      const email = (cols[emailIdx] ?? '').toLowerCase().trim()
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        failed++; errors.push(`Row ${i + 1}: invalid email '${email}'`); continue
+      }
+
+      const exists = await prisma.user.findUnique({ where: { email }, select: { id: true } })
+      if (exists) { skipped++; continue }
+
+      const name  = nameIdx >= 0 ? (cols[nameIdx] || email.split('@')[0]) : email.split('@')[0]
+      let   tier  = tierIdx >= 0 ? (cols[tierIdx] ?? 'free').toLowerCase() : 'free'
+      const isActive = statusIdx >= 0 ? (cols[statusIdx] ?? 'active').toLowerCase() !== 'banned' : true
+
+      if (!VALID_TIERS.includes(tier)) tier = 'free'
+
+      try {
+        await prisma.user.create({
+          data: { id: `csv-${Date.now()}-${Math.random().toString(36).slice(2)}`, email, name, tier, isActive },
+        })
+        imported++
+      } catch (e) {
+        failed++; errors.push(`Row ${i + 1} (${email}): ${(e as Error).message}`)
+      }
+    }
+
+    return reply.send({ success: true, imported, skipped, failed, errors: errors.slice(0, 10) })
+  })
 
   app.get('/admin/customers', async (req, reply) => {
     const q = req.query as Record<string, string>
@@ -226,6 +333,13 @@ export async function adminRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string }
     await prisma.user.delete({ where: { id } })
     return reply.send({ deleted: true })
+  })
+
+  // POST /api/admin/stems/purge-deleted — hard-delete stems soft-deleted > N days ago
+  app.post('/admin/stems/purge-deleted', async (req, reply) => {
+    const { days } = (req.body ?? {}) as { days?: number }
+    const { purged } = await purgeOldDeletes(days ?? 3)
+    return reply.send({ purged })
   })
 
   // ── Vault Operations ──────────────────────────────────────────────────────

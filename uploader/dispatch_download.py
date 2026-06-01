@@ -151,9 +151,12 @@ def _analyze_and_update_track_info(track_info: dict, audio_path: str, args: dict
 
 def get_optimal_device() -> str:
     if torch.cuda.is_available():
-        print(f"[GPU] {torch.cuda.get_device_name(0)}")
+        print(f"[GPU] CUDA — {torch.cuda.get_device_name(0)}")
         return "cuda:0"
-    print("[GPU] Not available — using CPU")
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        print("[GPU] Apple MPS (Metal)")
+        return "mps"
+    print("[CPU] No GPU — using CPU (slow)")
     return "cpu"
 
 project_root = os.path.dirname(os.path.abspath(__file__))

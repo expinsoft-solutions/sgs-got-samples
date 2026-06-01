@@ -1,5 +1,8 @@
+import { unlink } from 'fs/promises'
+import { join } from 'path'
 import { prisma } from '../lib/prisma.js'
 import { deleteAudio, masterKey } from '../lib/storage.js'
+import { stemDir, invalidateGenreZips } from './version-zip.service.js'
 
 export type ZipDecision = 'rebuild' | 'skip' | 'already_building'
 
@@ -34,10 +37,11 @@ export type DeleteDecision = 'proceed' | 'skip' | 'soft_only'
 export async function shouldDeleteStem(stemId: string): Promise<{ decision: DeleteDecision; reason: string }> {
   const stem = await prisma.stem.findUnique({
     where: { id: stemId },
-    select: { id: true, pendingDelete: true, isVisible: true, storagePath: true },
+    select: { id: true, pendingDelete: true, isVisible: true, storagePath: true, deletedAt: true },
   })
 
   if (!stem) return { decision: 'skip', reason: 'stem not found' }
+  if (stem.deletedAt) return { decision: 'skip', reason: 'already soft-deleted' }
   if (!stem.pendingDelete) return { decision: 'soft_only', reason: 'not marked for deletion — soft delete first' }
 
   const recentDownload = await prisma.download.findFirst({
@@ -52,17 +56,65 @@ export async function shouldDeleteStem(stemId: string): Promise<{ decision: Dele
 export async function executeStemDelete(stemId: string): Promise<void> {
   const stem = await prisma.stem.findUnique({
     where: { id: stemId },
-    select: { storagePath: true, genres: { select: { genreId: true } } },
+    select: { storagePath: true, genres: { select: { genreId: true, genre: { select: { slug: true } } } } },
   })
 
   if (!stem) return
 
-  deleteAudio(masterKey(stem.storagePath)).catch(() => {})
-  await prisma.stem.delete({ where: { id: stemId } })
+  // Soft delete — R2 + local files kept until purge cron (3 days)
+  await prisma.stem.update({
+    where: { id: stemId },
+    data: { isVisible: false, pendingDelete: false, deletedAt: new Date() },
+  })
 
-  for (const { genreId } of stem.genres) {
+  // Invalidate version zip cache immediately — next login rebuilds clean zips
+  for (const { genreId, genre } of stem.genres) {
     await markGenreStale(genreId)
+    await invalidateGenreZips(genreId, genre.slug)
   }
+}
+
+// Called by cron — hard-deletes stems soft-deleted more than `days` ago
+export async function purgeOldDeletes(days = 3): Promise<{ purged: number }> {
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+  const stems = await prisma.stem.findMany({
+    where: { deletedAt: { not: null, lte: cutoff } },
+    select: {
+      id: true,
+      storagePath: true,
+      genres: { select: { genreId: true, genre: { select: { slug: true } } } },
+    },
+  })
+
+  if (stems.length === 0) return { purged: 0 }
+
+  const affectedGenres = new Set<{ id: string; slug: string }>()
+
+  for (const stem of stems) {
+    // Delete from R2
+    deleteAudio(masterKey(stem.storagePath)).catch(() => {})
+
+    // Delete local VM file
+    const fileName = stem.storagePath.split('/').pop()
+    if (fileName) {
+      for (const { genre, genreId } of stem.genres) {
+        affectedGenres.add({ id: genreId, slug: genre.slug })
+        unlink(join(stemDir(genre.slug), fileName)).catch(() => {})
+      }
+    }
+  }
+
+  // Hard-delete DB records
+  await prisma.stem.deleteMany({
+    where: { id: { in: stems.map((s: { id: string }) => s.id) } },
+  })
+
+  // Invalidate cached version zips for affected genres
+  for (const { id, slug } of affectedGenres) {
+    await invalidateGenreZips(id, slug)
+  }
+
+  return { purged: stems.length }
 }
 
 export async function processPendingDeletes(): Promise<{ deleted: number; deferred: number }> {

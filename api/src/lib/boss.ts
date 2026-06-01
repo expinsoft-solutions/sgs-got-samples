@@ -8,11 +8,7 @@ export async function getBoss(): Promise<PgBoss> {
   _boss = new PgBoss({
     connectionString: process.env.DATABASE_URL!,
     max: 5,
-    retryLimit: 3,
-    retryDelay: 30,
-    expireInHours: 24,
-    deleteAfterDays: 7,
-  })
+  } as ConstructorParameters<typeof PgBoss>[0])
 
   _boss.on('error', (err: Error) => console.error('[pg-boss]', err))
 

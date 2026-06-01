@@ -725,7 +725,7 @@ class Content_download_main(ContentBase):
                             time.sleep(wait)
                         else:
                             # All 5 attempts exhausted — log clearly, do NOT silently continue
-                            print(f"   ❌ [LARAVEL] {stem_type} UPLOAD FAILED after 5 attempts — stem will be missing from library!")
+                            print(f"   ❌ [SGS] {stem_type} UPLOAD FAILED after 5 attempts — stem will be missing from library!")
                             print(f"      Track: {track.get('artist')} — {track.get('name')}")
                             print(f"      Error: {e}")
                     
