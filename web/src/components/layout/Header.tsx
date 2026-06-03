@@ -34,6 +34,12 @@ export function Header() {
           headers: { Authorization: `Bearer ${session.access_token}` },
         })
         if (res.ok) setMe(await res.json())
+        
+        // Trigger background prepare zipping
+        fetch(`${API}/api/vault/prepare-download`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }).catch(() => {})
       } catch { /* api not reachable */ }
       setAuthLoading(false)
     })
@@ -45,6 +51,12 @@ export function Header() {
           headers: { Authorization: `Bearer ${session.access_token}` },
         })
         if (res.ok) setMe(await res.json())
+        
+        // Trigger background prepare zipping
+        fetch(`${API}/api/vault/prepare-download`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }).catch(() => {})
       } catch { /* api not reachable */ }
       setAuthLoading(false)
     })

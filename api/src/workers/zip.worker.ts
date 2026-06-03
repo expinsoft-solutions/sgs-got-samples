@@ -6,22 +6,36 @@ import { buildVersionZip } from '../services/version-zip.service.js'
 export type ZipJobData = {
   genreId: string
   jobId?: string
+  fromVersion?: string // ISO format string
+  toVersion?: string   // ISO format string
 }
 
-async function handleZipJob(job: JobWithMetadata<ZipJobData>): Promise<void> {
-  const { genreId } = job.data
+async function handleZipJob(jobOrJobs: JobWithMetadata<ZipJobData> | JobWithMetadata<ZipJobData>[]): Promise<void> {
+  const jobs = Array.isArray(jobOrJobs) ? jobOrJobs : [jobOrJobs]
 
-  const genre = await prisma.genre.findUnique({
-    where: { id: genreId },
-    select: { slug: true },
-  })
-  if (!genre) return
+  for (const job of jobs) {
+    const { genreId, fromVersion: fv, toVersion: tv } = job.data
 
-  const windowMs = parseInt(process.env.VAULT_WINDOW_MONTHS ?? '3') * 30 * 24 * 60 * 60 * 1000
-  const fromVersion = new Date(Date.now() - windowMs)
-  const toVersion = new Date()
+    const genre = await prisma.genre.findUnique({
+      where: { id: genreId },
+      select: { slug: true },
+    })
+    if (!genre) continue
 
-  await buildVersionZip(genreId, genre.slug, fromVersion, toVersion)
+    let fromVersion: Date
+    let toVersion: Date
+
+    if (fv && tv) {
+      fromVersion = new Date(fv)
+      toVersion = new Date(tv)
+    } else {
+      const windowMs = parseInt(process.env.VAULT_WINDOW_MONTHS ?? '3') * 30 * 24 * 60 * 60 * 1000
+      fromVersion = new Date(Date.now() - windowMs)
+      toVersion = new Date()
+    }
+
+    await buildVersionZip(genreId, genre.slug, fromVersion, toVersion)
+  }
 }
 
 export async function startZipWorker(): Promise<void> {
@@ -32,11 +46,25 @@ export async function startZipWorker(): Promise<void> {
   console.log('[zip-worker] listening on queue:', ZIP_QUEUE)
 }
 
-export async function enqueueZip(genreId: string, jobId?: string): Promise<void> {
+export async function enqueueZip(
+  genreId: string,
+  jobId?: string,
+  fromVersion?: Date,
+  toVersion?: Date
+): Promise<void> {
   const boss = await getBoss()
   await boss.createQueue(ZIP_QUEUE)
-  await boss.send(ZIP_QUEUE, { genreId, jobId }, {
-    singletonKey: genreId,
+
+  const data: ZipJobData = { genreId, jobId }
+  if (fromVersion) data.fromVersion = fromVersion.toISOString()
+  if (toVersion) data.toVersion = toVersion.toISOString()
+
+  const singletonKey = fromVersion && toVersion
+    ? `${genreId}-${fromVersion.getTime()}-${toVersion.getTime()}`
+    : genreId
+
+  await boss.send(ZIP_QUEUE, data, {
+    singletonKey,
     retryLimit: 3,
     retryDelay: 30,
   })
