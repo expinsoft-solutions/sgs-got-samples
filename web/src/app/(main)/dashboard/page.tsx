@@ -4,12 +4,20 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
+const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
 
 type Panel = 'email' | 'password' | null
+
+type DbUser = {
+  email: string
+  tier: string
+  name?: string | null
+}
 
 export default function DashboardPage() {
   const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
+  const [dbUser, setDbUser] = useState<DbUser | null>(null)
   const [loading, setLoading] = useState(true)
   const [panel, setPanel] = useState<Panel>(null)
   const [toast, setToast] = useState('')
@@ -28,9 +36,17 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const supabase = createClient()
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) { router.push('/login'); return }
-      setUser(data.user)
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session) { router.push('/login'); return }
+      setUser(session.user)
+      try {
+        const res = await fetch(`${API}/api/me`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        })
+        if (res.ok) {
+          setDbUser(await res.json())
+        }
+      } catch { /* api not reachable */ }
       setLoading(false)
     })
   }, [router])
@@ -66,7 +82,7 @@ export default function DashboardPage() {
 
   if (loading) return <div style={{ textAlign: 'center', padding: 80, color: 'var(--mu)' }}>Loading…</div>
 
-  const tier: string = 'free' // TODO: fetch from /api/me once needed
+  const tier = dbUser?.tier ?? 'free'
 
   const tierBadge = tier === 'paid'
     ? { label: 'Full Access', bg: 'rgba(35,201,154,.15)', border: '#23c99a', color: '#23c99a' }

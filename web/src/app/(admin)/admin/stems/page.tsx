@@ -10,6 +10,158 @@ type Stem = {
   isVisible: boolean; isLocked: boolean; createdAt: string
 }
 
+type Genre = { id: string; name: string; slug: string }
+
+// ── Genre editor modal ──────────────────────────────────────────────────────
+function GenreModal({
+  stem, onClose, onSaved,
+}: {
+  stem: Stem
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [genres, setGenres] = useState<Genre[]>([])
+  const [selected, setSelected] = useState<string>('')
+  const [saving, setSaving] = useState(false)
+  const [newGenreName, setNewGenreName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    fetch(`${API}/api/admin/genres`)
+      .then((r) => r.json())
+      .then((d) => {
+        setGenres(d.genres ?? [])
+        // Pre-select the current genre by name
+        const current = (d.genres ?? []).find((g: Genre) => g.name === stem.genre)
+        if (current) setSelected(current.id)
+      })
+  }, [stem.genre])
+
+  async function createGenre() {
+    if (!newGenreName.trim()) return
+    setCreating(true)
+    setError('')
+    try {
+      const res = await fetch(`${API}/api/admin/genres`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newGenreName }),
+      })
+      if (!res.ok) {
+        const errData = await res.json()
+        throw new Error(errData.error || 'Failed to create genre')
+      }
+      const newG = await res.json()
+      // Add new genre and sort them by name
+      setGenres((prev) => [...prev, newG].sort((a, b) => a.name.localeCompare(b.name)))
+      setSelected(newG.id)
+      setNewGenreName('')
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function save() {
+    if (!selected) return
+    setSaving(true)
+    await fetch(`${API}/api/admin/stems/${stem.id}/genres`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ genreIds: [selected] }),
+    })
+    setSaving(false)
+    onSaved()
+    onClose()
+  }
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+          zIndex: 100, backdropFilter: 'blur(2px)',
+        }}
+      />
+      {/* Modal */}
+      <div style={{
+        position: 'fixed', top: '50%', left: '50%',
+        transform: 'translate(-50%,-50%)',
+        zIndex: 101, background: 'var(--pb2)',
+        border: '1px solid var(--di)', borderRadius: 10,
+        padding: '24px 28px', minWidth: 340,
+        boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+      }}>
+        <p style={{
+          fontFamily: 'var(--font-exo2)', fontSize: '0.68rem',
+          letterSpacing: '0.1em', textTransform: 'uppercase',
+          color: 'var(--mu2)', marginBottom: 4,
+        }}>
+          Edit Genre
+        </p>
+        <p style={{ fontSize: '0.9rem', color: 'var(--tx)', marginBottom: 18, fontWeight: 500 }}>
+          {stem.title}
+          <span style={{ color: 'var(--mu)', fontWeight: 400, fontSize: '0.8rem' }}> · {stem.artist}</span>
+        </p>
+
+        <select
+          className="input"
+          style={{ width: '100%', marginBottom: 12 }}
+          value={selected}
+          onChange={(e) => setSelected(e.target.value)}
+        >
+          <option value="">— pick a genre —</option>
+          {genres.map((g) => (
+            <option key={g.id} value={g.id}>{g.name}</option>
+          ))}
+        </select>
+
+        {/* Direct Genre Creation */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: error ? 8 : 18 }}>
+          <input
+            className="input"
+            style={{ flex: 1 }}
+            placeholder="Or create new genre..."
+            value={newGenreName}
+            onChange={(e) => setNewGenreName(e.target.value)}
+          />
+          <button
+            className="btn-ghost"
+            style={{ padding: '0 12px', fontSize: '0.75rem', borderColor: 'var(--acc)', color: 'var(--acc)' }}
+            disabled={!newGenreName.trim() || creating}
+            onClick={createGenre}
+          >
+            {creating ? 'Creating…' : 'Create'}
+          </button>
+        </div>
+
+        {error && (
+          <p style={{ color: '#ef4444', fontSize: '0.72rem', marginBottom: 18, marginTop: -4 }}>{error}</p>
+        )}
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button className="btn-ghost" style={{ padding: '7px 16px', fontSize: '0.78rem' }} onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="btn-ghost"
+            style={{ padding: '7px 16px', fontSize: '0.78rem', color: 'var(--acc)', borderColor: 'var(--acc)', opacity: saving ? 0.5 : 1 }}
+            disabled={!selected || saving}
+            onClick={save}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ── Main page ───────────────────────────────────────────────────────────────
 export default function AdminStems() {
   const [stems, setStems] = useState<Stem[]>([])
   const [total, setTotal] = useState(0)
@@ -18,6 +170,7 @@ export default function AdminStems() {
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
+  const [editStem, setEditStem] = useState<Stem | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -66,6 +219,14 @@ export default function AdminStems() {
 
   return (
     <div>
+      {editStem && (
+        <GenreModal
+          stem={editStem}
+          onClose={() => setEditStem(null)}
+          onSaved={load}
+        />
+      )}
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
         <h1 style={{
           fontFamily: 'var(--font-exo2)', fontWeight: 300, fontSize: '1.4rem',
@@ -135,13 +296,20 @@ export default function AdminStems() {
                     {s.isVisible ? 'Visible' : 'Hidden'}
                   </span>
                 </td>
-                <td style={{ padding: '8px 12px' }}>
+                <td style={{ padding: '8px 12px', display: 'flex', gap: 6 }}>
                   <button
                     className="btn-ghost"
                     style={{ padding: '4px 10px', fontSize: '0.7rem' }}
                     onClick={() => toggleVisibility(s.id)}
                   >
                     Toggle
+                  </button>
+                  <button
+                    className="btn-ghost"
+                    style={{ padding: '4px 10px', fontSize: '0.7rem', color: 'var(--acc)', borderColor: 'var(--acc)' }}
+                    onClick={() => setEditStem(s)}
+                  >
+                    Edit
                   </button>
                 </td>
               </tr>

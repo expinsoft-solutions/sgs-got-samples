@@ -67,11 +67,17 @@ export async function adminRoutes(app: FastifyInstance) {
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
+        include: {
+          genres: { select: { genre: { select: { name: true } } }, take: 1 },
+        },
       }),
       prisma.stem.count({ where }),
     ])
 
-    return reply.send({ stems, pagination: { page, limit, total, pages: Math.ceil(total / limit) } })
+    return reply.send({
+      stems: stems.map((s) => ({ ...s, genre: s.genres[0]?.genre?.name ?? '—', genres: undefined })),
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    })
   })
 
   // GET /api/admin/stems/review — pending stems for review board
@@ -136,6 +142,33 @@ export async function adminRoutes(app: FastifyInstance) {
       select: { id: true, name: true, slug: true },
     })
     return reply.send({ genres })
+  })
+
+  // POST /api/admin/genres — create a new genre directly
+  app.post('/admin/genres', async (req, reply) => {
+    const { name } = req.body as { name: string }
+    if (!name || !name.trim()) {
+      return reply.code(400).send({ error: 'Genre name is required' })
+    }
+
+    const trimmedName = name.trim()
+    const slug = trimmedName
+      .toLowerCase()
+      .replace(/[&]/g, '-and-')
+      .replace(/[\s/]+/g, '-')
+      .replace(/[^a-z0-9-]/g, '')
+
+    try {
+      const genre = await prisma.genre.upsert({
+        where: { name: trimmedName },
+        create: { name: trimmedName, slug },
+        update: {},
+        select: { id: true, name: true, slug: true },
+      })
+      return reply.send(genre)
+    } catch (err) {
+      return reply.code(500).send({ error: (err as Error).message })
+    }
   })
 
   app.get('/admin/stems/:id', async (req, reply) => {

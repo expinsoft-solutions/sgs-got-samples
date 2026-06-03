@@ -32,15 +32,49 @@ function GenrePicker({
   current,
   allGenres,
   onChange,
+  onAddNewGenre,
 }: {
   stemId: string
   current: Genre[]
   allGenres: Genre[]
   onChange: (genres: Genre[]) => void
+  onAddNewGenre: (newGenre: Genre) => void
 }) {
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set(current.map((g) => g.id)))
   const [saving, setSaving] = useState(false)
+  const [newGenreName, setNewGenreName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState('')
+
+  async function createGenre() {
+    if (!newGenreName.trim()) return
+    setCreating(true)
+    setError('')
+    try {
+      const res = await fetch(`${API}/api/admin/genres`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newGenreName }),
+      })
+      if (!res.ok) {
+        const errData = await res.json()
+        throw new Error(errData.error || 'Failed to create genre')
+      }
+      const newG = await res.json()
+      onAddNewGenre(newG)
+      setSelected((prev) => {
+        const next = new Set(prev)
+        next.add(newG.id)
+        return next
+      })
+      setNewGenreName('')
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setCreating(false)
+    }
+  }
 
   async function save() {
     setSaving(true)
@@ -124,6 +158,33 @@ function GenrePicker({
                 </label>
               ))}
             </div>
+
+            {/* Divider */}
+            <div style={{ height: 1, background: 'var(--di)', margin: '8px 0' }} />
+
+            {/* Direct Genre Creation */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: error ? 4 : 8 }}>
+              <input
+                className="input"
+                style={{ flex: 1, padding: '4px 8px', fontSize: '0.75rem', height: 28 }}
+                placeholder="New genre..."
+                value={newGenreName}
+                onChange={(e) => setNewGenreName(e.target.value)}
+              />
+              <button
+                className="btn-ghost"
+                style={{ padding: '0 8px', fontSize: '0.68rem', height: 28, borderColor: 'var(--acc)', color: 'var(--acc)' }}
+                disabled={!newGenreName.trim() || creating}
+                onClick={createGenre}
+              >
+                {creating ? '…' : '+'}
+              </button>
+            </div>
+
+            {error && (
+              <p style={{ color: '#ef4444', fontSize: '0.68rem', marginBottom: 8, wordBreak: 'break-word' }}>{error}</p>
+            )}
+
             <button
               className="btn-acc"
               style={{ width: '100%', justifyContent: 'center', padding: '6px', fontSize: '0.72rem' }}
@@ -149,6 +210,7 @@ function StemRow({
   onPublish,
   onDelete,
   onGenreChange,
+  onAddNewGenre,
 }: {
   stem: ReviewStem
   allGenres: Genre[]
@@ -157,6 +219,7 @@ function StemRow({
   onPublish: () => void
   onDelete: () => void
   onGenreChange: (genres: Genre[]) => void
+  onAddNewGenre: (newGenre: Genre) => void
 }) {
   return (
     <tr style={{ borderBottom: '1px solid var(--di)' }}
@@ -186,6 +249,7 @@ function StemRow({
           current={stem.genres}
           allGenres={allGenres}
           onChange={onGenreChange}
+          onAddNewGenre={onAddNewGenre}
         />
       </td>
       <td style={{ padding: '8px 12px', fontFamily: 'var(--font-share-tech-mono)', fontSize: '0.75rem', color: 'var(--mu)', textAlign: 'center' }}>
@@ -228,6 +292,7 @@ function StemsTable({
   onPublish,
   onDelete,
   onGenreChange,
+  onAddNewGenre,
 }: {
   stems: ReviewStem[]
   allGenres: Genre[]
@@ -237,6 +302,7 @@ function StemsTable({
   onPublish: (id: string) => void
   onDelete: (id: string) => void
   onGenreChange: (id: string, genres: Genre[]) => void
+  onAddNewGenre: (newGenre: Genre) => void
 }) {
   const allSelected = stems.length > 0 && stems.every((s) => selected.has(s.id))
 
@@ -277,6 +343,7 @@ function StemsTable({
             onPublish={() => onPublish(stem.id)}
             onDelete={() => onDelete(stem.id)}
             onGenreChange={(genres) => onGenreChange(stem.id, genres)}
+            onAddNewGenre={onAddNewGenre}
           />
         ))}
       </tbody>
@@ -319,6 +386,13 @@ export default function ReviewPage() {
   function updateGenres(stemId: string, genres: Genre[]) {
     setStems((prev) => prev.map((s) => s.id === stemId ? { ...s, genres } : s))
   }
+
+  const handleAddNewGenre = useCallback((newG: Genre) => {
+    setAllGenres((prev) => {
+      if (prev.some((g) => g.id === newG.id)) return prev
+      return [...prev, newG].sort((a, b) => a.name.localeCompare(b.name))
+    })
+  }, [])
 
   async function publishStem(id: string) {
     await fetch(`${API}/api/admin/stems/${id}/toggle-visibility`, { method: 'POST' })
@@ -436,6 +510,7 @@ export default function ReviewPage() {
             onPublish={publishStem}
             onDelete={deleteStem}
             onGenreChange={updateGenres}
+            onAddNewGenre={handleAddNewGenre}
           />
         </div>
       )}
@@ -479,6 +554,7 @@ export default function ReviewPage() {
                 onPublish={publishStem}
                 onDelete={deleteStem}
                 onGenreChange={updateGenres}
+                onAddNewGenre={handleAddNewGenre}
               />
             </div>
           ))}

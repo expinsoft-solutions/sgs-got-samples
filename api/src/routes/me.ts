@@ -22,10 +22,25 @@ export async function meRoutes(app: FastifyInstance) {
       return reply.code(401).send({ error: 'Invalid token' })
     }
 
-    const dbUser = await prisma.user.findUnique({
+    let dbUser = await prisma.user.findUnique({
       where: { id: user.id },
       select: { id: true, email: true, tier: true, webAccess: true, name: true, avatarUrl: true },
     })
+
+    if (!dbUser && user.email) {
+      dbUser = await prisma.user.create({
+        data: {
+          id: user.id,
+          email: user.email,
+          name: user.user_metadata?.name ?? null,
+          avatarUrl: user.user_metadata?.avatar_url ?? null,
+          tier: 'free',
+          webAccess: false,
+          isActive: true,
+        },
+        select: { id: true, email: true, tier: true, webAccess: true, name: true, avatarUrl: true },
+      })
+    }
 
     return reply.send({
       id: user.id,

@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { api, type VaultGenre } from '@/lib/api'
+import { createClient } from '@/lib/supabase'
+
+const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
 
 function formatBytes(b: string | null): string {
   if (!b) return '—'
@@ -127,18 +130,54 @@ export function VaultClient() {
   const [genres, setGenres] = useState<VaultGenre[]>([])
   const [loading, setLoading] = useState(true)
   const [totalStems, setTotalStems] = useState(0)
+  const [tier, setTier] = useState<string | null>(null)
 
   useEffect(() => {
+    const supabase = createClient()
+
+    // Fetch genres
     api.vault.genres().then((d) => {
       setGenres(d.genres ?? [])
       setTotalStems(d.genres?.reduce((a, g) => a + g.stemCount, 0) ?? 0)
       setLoading(false)
     }).catch(() => setLoading(false))
+
+    // Fetch user profile tier
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session) { setTier('free'); return }
+      try {
+        const res = await fetch(`${API}/api/me`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        })
+        if (res.ok) {
+          const profile = await res.json()
+          setTier(profile.tier)
+        } else {
+          setTier('free')
+        }
+      } catch {
+        setTier('free')
+      }
+    })
   }, [])
 
   async function handleDownload(genre: string) {
-    const { url } = await api.vault.download(genre)
-    window.location.href = url
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+
+    try {
+      const res = await fetch(`${API}/api/vault/genres/${genre}/download`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (res.ok) {
+        const { url } = await res.json()
+        // Append token as query parameter so browser navigation is authorized
+        window.location.href = `${url}&token=${session.access_token}`
+      }
+    } catch (e) {
+      console.error('Download request failed', e)
+    }
   }
 
   const totalSize = genres.reduce((a, g) => a + Number(g.fileSizeBytes ?? 0), 0)
@@ -199,12 +238,21 @@ export function VaultClient() {
           <p style={{ fontSize: 14, color: 'var(--mu)', maxWidth: 620, lineHeight: 1.6, fontWeight: 300 }}>
             The complete stem library, organized by genre for fast, streamlined access. Browse downloadable genre packs sorted by artist, album, and song. Each track folder includes five stem parts labeled with BPM and key. New update packs can be downloaded separately without re-downloading the full library.
           </p>
-          <div style={{ marginTop: 14, padding: '10px 16px', background: 'rgba(96,116,255,.08)', border: '1px solid rgba(96,116,255,.22)', borderRadius: 10, display: 'inline-block' }}>
-            <span style={{ fontSize: 13, color: '#8097ff' }}>
-              🔒 Full Access required to download.{' '}
-              <Link href="/pricing" style={{ color: 'var(--acc)', textDecoration: 'underline' }}>Unlock for $35 →</Link>
-            </span>
-          </div>
+          {tier !== 'paid' && tier !== 'admin' && (
+            <div style={{ marginTop: 14, padding: '10px 16px', background: 'rgba(96,116,255,.08)', border: '1px solid rgba(96,116,255,.22)', borderRadius: 10, display: 'inline-block' }}>
+              <span style={{ fontSize: 13, color: '#8097ff' }}>
+                🔒 Full Access required to download.{' '}
+                <Link href="/pricing" style={{ color: 'var(--acc)', textDecoration: 'underline' }}>Unlock for $35 →</Link>
+              </span>
+            </div>
+          )}
+          {(tier === 'paid' || tier === 'admin') && (
+            <div style={{ marginTop: 14, padding: '10px 16px', background: 'rgba(35,201,154,.12)', border: '1px solid rgba(35,201,154,.25)', borderRadius: 10, display: 'inline-block' }}>
+              <span style={{ fontSize: 13, color: '#23c99a' }}>
+                ✨ Premium Account Active — Enjoy your downloads!
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Stats bar */}

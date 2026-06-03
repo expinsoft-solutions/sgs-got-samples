@@ -15,10 +15,19 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-async function getUserFromRequest(req: { headers: { authorization?: string } }) {
+async function getUserFromRequest(req: { headers: { authorization?: string }; query?: any }) {
+  let token: string | undefined
+
   const auth = req.headers.authorization
-  if (!auth?.startsWith('Bearer ')) return null
-  const { data: { user } } = await supabase.auth.getUser(auth.slice(7))
+  if (auth?.startsWith('Bearer ')) {
+    token = auth.slice(7)
+  } else {
+    const q = req.query as { token?: string } | undefined
+    if (q?.token) token = q.token
+  }
+
+  if (!token) return null
+  const { data: { user } } = await supabase.auth.getUser(token)
   return user
 }
 
@@ -26,6 +35,7 @@ export async function vaultRoutes(app: FastifyInstance) {
   // GET /api/vault/genres — public genre stats
   app.get('/vault/genres', async (_req, reply) => {
     const statuses = await prisma.vaultZipStatus.findMany({
+      where: { stemCount: { gt: 0 } },
       orderBy: { genre: { name: 'asc' } },
       include: { genre: { select: { name: true, slug: true, description: true, tags: true } } },
     })
@@ -104,6 +114,41 @@ export async function vaultRoutes(app: FastifyInstance) {
     }
 
     return reply.send({ downloads, upToDate })
+  })
+
+  // GET /api/vault/genres/:slug/download — helper endpoint for frontend to get streaming url
+  app.get('/vault/genres/:slug/download', async (req, reply) => {
+    const user = await getUserFromRequest(req)
+    if (!user) return reply.code(401).send({ error: 'Unauthorised' })
+
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { lastDownloadVersion: true, tier: true },
+    })
+    if (!dbUser) return reply.code(404).send({ error: 'User not found' })
+    if (dbUser.tier === 'free') return reply.code(403).send({ error: 'Upgrade required' })
+
+    const slug = (req.params as { slug: string }).slug.toLowerCase()
+    const genre = await prisma.genre.findUnique({ where: { slug }, select: { id: true } })
+    if (!genre) return reply.code(404).send({ error: 'Genre not found' })
+
+    const fromVersion = getFromVersion(dbUser.lastDownloadVersion)
+    const toVersion = await getLatestVersion(genre.id)
+
+    const host = req.headers.host ?? 'localhost:3001'
+    const protocol = req.protocol ?? 'http'
+
+    if (!toVersion || fromVersion >= toVersion) {
+      // If up-to-date, fall back to downloading last 3 months
+      const windowMs = parseInt(process.env.VAULT_WINDOW_MONTHS ?? '3') * 30 * 24 * 60 * 60 * 1000
+      const from = new Date(Date.now() - windowMs)
+      const to = new Date()
+      const url = `${protocol}://${host}/api/vault/download/${slug}?from=${from.getTime()}&to=${to.getTime()}`
+      return reply.send({ url })
+    }
+
+    const url = `${protocol}://${host}/api/vault/download/${slug}?from=${fromVersion.getTime()}&to=${toVersion.getTime()}`
+    return reply.send({ url })
   })
 
   // GET /api/vault/download/:slug?from=<ts>&to=<ts> — stream zip file

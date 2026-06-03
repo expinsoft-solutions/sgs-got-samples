@@ -37,6 +37,7 @@ await server.register(cors, {
     if (!origin || allowedOrigins.includes(origin)) return cb(null, true)
     cb(new Error(`CORS origin not allowed: ${origin}`), false)
   },
+  methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   credentials: true,
 })
 
