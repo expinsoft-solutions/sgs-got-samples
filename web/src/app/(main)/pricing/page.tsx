@@ -2,9 +2,12 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '@/lib/auth-context'
 
 export default function PricingPage() {
   const router = useRouter()
+  const { me } = useAuth()
+  const hasFull = me?.tier === 'paid' || me?.tier === 'admin'
 
   const dot = (
     <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--acc)', opacity: 0.6, flexShrink: 0, display: 'inline-block' }} />
@@ -56,6 +59,26 @@ export default function PricingPage() {
             Pay once, no renewals. Get into the library your way.
           </p>
         </div>
+
+        {/* Already owned banner */}
+        {hasFull && (
+          <div style={{
+            maxWidth: 720, margin: '0 auto 20px', padding: '12px 18px',
+            background: 'rgba(76,175,130,.08)', border: '1px solid rgba(76,175,130,.25)',
+            borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10,
+          }}>
+            <span style={{ fontSize: 16 }}>✨</span>
+            <span style={{ fontSize: 13, color: '#4caf82', fontWeight: 500 }}>
+              You already have Full Access — enjoy the complete library!
+            </span>
+            <Link href="/library" style={{
+              marginLeft: 'auto', fontSize: 12, color: '#4caf82',
+              borderBottom: '1px solid rgba(76,175,130,.4)', whiteSpace: 'nowrap',
+            }}>
+              Go to Library →
+            </Link>
+          </div>
+        )}
 
         {/* Cards */}
         <div className="pricing-grid" style={{
@@ -114,12 +137,22 @@ export default function PricingPage() {
               {li('Future library updates included')}
               {li('One-time payment — no subscription')}
             </ul>
-            <button
-              className="price-btn"
-              onClick={() => router.push('/register?plan=full')}
-            >
-              Get Full Access
-            </button>
+            {hasFull ? (
+              <div style={{
+                width: '100%', height: 40, borderRadius: 9, fontSize: 13, fontWeight: 600,
+                background: 'rgba(76,175,130,.12)', border: '1px solid rgba(76,175,130,.35)',
+                color: '#4caf82', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              }}>
+                ✓ Active
+              </div>
+            ) : (
+              <button
+                className="price-btn"
+                onClick={() => router.push('/register?plan=full')}
+              >
+                Get Full Access
+              </button>
+            )}
           </div>
 
         </div>

@@ -25,6 +25,8 @@ function formatBytes(b: string | null): string {
 export default function AdminVault() {
   const [statuses, setStatuses] = useState<VaultStatus[]>([])
   const [rebuilding, setRebuilding] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<{ estimatedStems: number } | null>(null)
 
   async function load() {
     const res = await fetch(`${API}/api/admin/vault/status`)
@@ -33,6 +35,15 @@ export default function AdminVault() {
   }
 
   useEffect(() => { load() }, [])
+
+  async function syncFromR2() {
+    setSyncing(true)
+    setSyncResult(null)
+    const res = await fetch(`${API}/api/admin/setup/sync-stems`, { method: 'POST' })
+    const data = await res.json()
+    setSyncResult(data)
+    setSyncing(false)
+  }
 
   async function rebuild(genreId: string) {
     setRebuilding(genreId)
@@ -52,6 +63,34 @@ export default function AdminVault() {
         </h1>
         <button className="btn-ghost" style={{ padding: '7px 16px', fontSize: '0.78rem' }} onClick={load}>
           ↺ Refresh
+        </button>
+      </div>
+
+      {/* Setup: one-time R2 → local sync */}
+      <div className="card" style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: 'var(--font-exo2)', fontSize: '0.72rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--mu2)', marginBottom: 4 }}>
+            First-time setup
+          </div>
+          <div style={{ fontSize: '0.84rem', color: 'var(--tx)' }}>
+            Sync all stems from R2 to local disk
+          </div>
+          <div style={{ fontSize: '0.72rem', color: 'var(--mu)', marginTop: 3 }}>
+            Runs in background — skips files already present. Check server logs for progress.
+          </div>
+          {syncResult && (
+            <div style={{ fontSize: '0.72rem', color: '#4caf82', marginTop: 6 }}>
+              ✓ Started — syncing {syncResult.estimatedStems} stems
+            </div>
+          )}
+        </div>
+        <button
+          className="btn-acc"
+          style={{ padding: '8px 20px', fontSize: '0.78rem', opacity: syncing ? 0.5 : 1 }}
+          disabled={syncing}
+          onClick={syncFromR2}
+        >
+          {syncing ? 'Starting…' : 'Sync from R2'}
         </button>
       </div>
 

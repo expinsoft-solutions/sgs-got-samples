@@ -72,3 +72,4 @@ try {
   server.log.error(err)
   process.exit(1)
 }
+

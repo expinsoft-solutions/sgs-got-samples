@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { api, type VaultGenre } from '@/lib/api'
 import { createClient } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth-context'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
 
@@ -127,38 +128,19 @@ function GenreCard({ g, index, onDownload }: {
 }
 
 export function VaultClient() {
+  const { me } = useAuth()
+  const tier = me?.tier ?? 'free'
+
   const [genres, setGenres] = useState<VaultGenre[]>([])
   const [loading, setLoading] = useState(true)
   const [totalStems, setTotalStems] = useState(0)
-  const [tier, setTier] = useState<string | null>(null)
 
   useEffect(() => {
-    const supabase = createClient()
-
-    // Fetch genres
     api.vault.genres().then((d) => {
       setGenres(d.genres ?? [])
       setTotalStems(d.genres?.reduce((a, g) => a + g.stemCount, 0) ?? 0)
       setLoading(false)
     }).catch(() => setLoading(false))
-
-    // Fetch user profile tier
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) { setTier('free'); return }
-      try {
-        const res = await fetch(`${API}/api/me`, {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        })
-        if (res.ok) {
-          const profile = await res.json()
-          setTier(profile.tier)
-        } else {
-          setTier('free')
-        }
-      } catch {
-        setTier('free')
-      }
-    })
   }, [])
 
   async function handleDownload(genre: string) {

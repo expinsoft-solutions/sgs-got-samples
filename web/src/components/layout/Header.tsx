@@ -2,8 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase'
+import { useState } from 'react'
+import { useAuth } from '@/lib/auth-context'
 
 const NAV = [
   { href: '/library', label: 'Library' },
@@ -12,62 +12,15 @@ const NAV = [
   { href: '/about', label: 'About' },
 ]
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:7626'
-
-type Me = { email: string; tier: string; isAdmin: boolean; name?: string | null }
-
 export function Header() {
   const path = usePathname()
   const router = useRouter()
   const [menuOpen, setMenuOpen] = useState(false)
   const [dropOpen, setDropOpen] = useState(false)
-  const [me, setMe] = useState<Me | null>(null)
-  const [authLoading, setAuthLoading] = useState(true)
-
-  useEffect(() => {
-    const supabase = createClient()
-
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) { setMe(null); setAuthLoading(false); return }
-      try {
-        const res = await fetch(`${API}/api/me`, {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        })
-        if (res.ok) setMe(await res.json())
-        
-        // Trigger background prepare zipping
-        fetch(`${API}/api/vault/prepare-download`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        }).catch(() => {})
-      } catch { /* api not reachable */ }
-      setAuthLoading(false)
-    })
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (!session) { setMe(null); setAuthLoading(false); return }
-      try {
-        const res = await fetch(`${API}/api/me`, {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        })
-        if (res.ok) setMe(await res.json())
-        
-        // Trigger background prepare zipping
-        fetch(`${API}/api/vault/prepare-download`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        }).catch(() => {})
-      } catch { /* api not reachable */ }
-      setAuthLoading(false)
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
+  const { me, authLoading, signOut: ctxSignOut } = useAuth()
 
   async function signOut() {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    setMe(null)
+    await ctxSignOut()
     router.push('/')
   }
 

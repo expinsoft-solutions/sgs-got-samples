@@ -4,6 +4,7 @@ import { deleteAudio, masterKey } from '../lib/storage.js'
 import { shouldRebuildZip, shouldDeleteStem, executeStemDelete, processPendingDeletes, markGenreStale, purgeOldDeletes } from '../services/vault.service.js'
 import { invalidateGenreZips as invalidateVersionZips } from '../services/version-zip.service.js'
 import { enqueueZip } from '../workers/zip.worker.js'
+import { syncStemsFromR2 } from '../lib/sync.js'
 
 export async function adminRoutes(app: FastifyInstance) {
   // ── Stats ─────────────────────────────────────────────────────────────────
@@ -443,6 +444,16 @@ export async function adminRoutes(app: FastifyInstance) {
       take: 50,
     })
     return reply.send({ report })
+  })
+
+  // ── Setup ─────────────────────────────────────────────────────────────────
+
+  // POST /admin/setup/sync-stems — one-time: pull all R2 stems to local disk
+  // Returns immediately; sync runs in background. Check server logs for progress.
+  app.post('/admin/setup/sync-stems', async (_req, reply) => {
+    const total = await prisma.stem.count({ where: { isVisible: true, deletedAt: null, storagePath: { not: '' } } })
+    syncStemsFromR2().catch((err) => app.log.error(err, '[sync] crashed'))
+    return reply.send({ started: true, estimatedStems: total })
   })
 
   // ── Settings ──────────────────────────────────────────────────────────────
