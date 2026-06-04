@@ -60,6 +60,7 @@ export async function adminRoutes(app: FastifyInstance) {
     }
     if (q.genre) where.genres = { some: { genre: { name: q.genre } } }
     if (q.visible !== undefined) where.isVisible = q.visible === 'true'
+    if (q.pendingPublish !== undefined) where.isPendingPublish = q.pendingPublish === 'true'
 
     const [stems, total] = await Promise.all([
       prisma.stem.findMany({
@@ -68,14 +69,14 @@ export async function adminRoutes(app: FastifyInstance) {
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          genres: { select: { genre: { select: { name: true } } }, take: 1 },
+          genres: { select: { genre: { select: { id: true, name: true } } } },
         },
       }),
       prisma.stem.count({ where }),
     ])
 
     return reply.send({
-      stems: stems.map((s) => ({ ...s, genre: s.genres[0]?.genre?.name ?? '—', genres: undefined })),
+      stems: stems.map((s) => ({ ...s, genres: s.genres.map((g) => g.genre) })),
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     })
   })
@@ -185,24 +186,43 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send(stem)
   })
 
-  app.post('/admin/stems/:id/toggle-visibility', async (req, reply) => {
+  // POST /admin/stems/:id/publish — approve a review-pending stem + trigger rebuild
+  app.post('/admin/stems/:id/publish', async (req, reply) => {
     const { id } = req.params as { id: string }
-    const stem = await prisma.stem.findUnique({ where: { id }, select: { isVisible: true } })
-    if (!stem) return reply.code(404).send({ error: 'Not found' })
-    const updated = await prisma.stem.update({
+    const stem = await prisma.stem.findUnique({
       where: { id },
-      data: {
-        isVisible: !stem.isVisible,
-        ...((!stem.isVisible) ? { isPendingPublish: false, vaultPublishedAt: new Date() } : {}),
-      },
+      include: { genres: { select: { genreId: true } } },
     })
-    return reply.send({ isVisible: updated.isVisible })
+    if (!stem) return reply.code(404).send({ error: 'Not found' })
+    await prisma.stem.update({
+      where: { id },
+      data: { isVisible: true, isPendingPublish: false, vaultPublishedAt: new Date() },
+    })
+    const genreIds = stem.genres.map((g) => g.genreId)
+    for (const genreId of genreIds) {
+      await markGenreStale(genreId)
+      await enqueueZip(genreId)
+    }
+    return reply.send({ published: true })
   })
 
-  app.post('/admin/stems/bulk-visibility', async (req, reply) => {
-    const { ids, visible } = req.body as { ids: string[]; visible: boolean }
-    await prisma.stem.updateMany({ where: { id: { in: ids } }, data: { isVisible: visible } })
-    return reply.send({ updated: ids.length })
+  // POST /admin/stems/bulk-publish — approve multiple review-pending stems + trigger rebuilds
+  app.post('/admin/stems/bulk-publish', async (req, reply) => {
+    const { ids } = req.body as { ids: string[] }
+    const stems = await prisma.stem.findMany({
+      where: { id: { in: ids } },
+      include: { genres: { select: { genreId: true } } },
+    })
+    await prisma.stem.updateMany({
+      where: { id: { in: ids } },
+      data: { isVisible: true, isPendingPublish: false, vaultPublishedAt: new Date() },
+    })
+    const genreIds = [...new Set(stems.flatMap((s) => s.genres.map((g) => g.genreId)))]
+    for (const genreId of genreIds) {
+      await markGenreStale(genreId)
+      await enqueueZip(genreId)
+    }
+    return reply.send({ published: ids.length })
   })
 
   app.post('/admin/stems/bulk-delete', async (req, reply) => {
@@ -423,5 +443,22 @@ export async function adminRoutes(app: FastifyInstance) {
       take: 50,
     })
     return reply.send({ report })
+  })
+
+  // ── Settings ──────────────────────────────────────────────────────────────
+
+  app.get('/admin/settings', async (_req, reply) => {
+    const setting = await prisma.setting.findUnique({ where: { key: 'review_enabled' } })
+    return reply.send({ reviewEnabled: setting?.value === 'true' })
+  })
+
+  app.patch('/admin/settings', async (req, reply) => {
+    const { reviewEnabled } = req.body as { reviewEnabled: boolean }
+    await prisma.setting.upsert({
+      where: { key: 'review_enabled' },
+      create: { key: 'review_enabled', value: String(reviewEnabled) },
+      update: { value: String(reviewEnabled) },
+    })
+    return reply.send({ reviewEnabled })
   })
 }

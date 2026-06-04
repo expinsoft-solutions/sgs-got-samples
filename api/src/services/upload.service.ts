@@ -142,7 +142,8 @@ export async function uploadStem(input: StemInput) {
 }
 
 export async function completeJob(jobId: string) {
-  const reviewMode = process.env.REVIEW_MODE === 'true'
+  const setting = await prisma.setting.findUnique({ where: { key: 'review_enabled' } })
+  const reviewMode = setting?.value === 'true'
 
   const stems = await prisma.stem.findMany({
     where: { uploadedFromJobId: jobId, isPendingPublish: true },
@@ -156,14 +157,8 @@ export async function completeJob(jobId: string) {
 
   let zipJobsQueued = 0
 
-  if (reviewMode) {
-    // Staged for admin review — hidden until approved in /admin/review
-    await prisma.stem.updateMany({
-      where: { uploadedFromJobId: jobId, isPendingPublish: true },
-      data: { isPendingPublish: false, isVisible: false },
-    })
-  } else {
-    // Auto-publish
+  if (!reviewMode) {
+    // Auto-publish: make stems visible + trigger rebuilds
     await prisma.stem.updateMany({
       where: { uploadedFromJobId: jobId, isPendingPublish: true },
       data: { isPendingPublish: false, isVisible: true, vaultPublishedAt: new Date() },
@@ -174,6 +169,7 @@ export async function completeJob(jobId: string) {
       zipJobsQueued++
     }
   }
+  // Review mode: stems stay isPendingPublish:true — admin publishes from /admin/review
 
   await prisma.uploadJob.updateMany({
     where: { jobId },

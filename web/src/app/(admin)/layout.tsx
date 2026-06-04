@@ -9,7 +9,6 @@ const TABS: { href: string; label: string; exact?: boolean }[] = [
   { href: '/admin', label: 'Overview', exact: true },
   { href: '/admin/customers', label: 'Customers' },
   { href: '/admin/stems', label: 'Stems' },
-  { href: '/admin/review', label: 'Review' },
   { href: '/admin/upload', label: 'Upload' },
   { href: '/admin/vault', label: 'Vault Ops' },
 ]
