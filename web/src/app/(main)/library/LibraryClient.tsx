@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { api, type Stem, type FilterOptions } from '@/lib/api'
+import { useAuth } from '@/lib/auth-context'
 
 const LIMIT = 50
 
@@ -37,7 +38,12 @@ function genWave(seed: number): number[] {
 }
 
 export function LibraryClient() {
+  const { me } = useAuth()
+  const hasFullAccess = me?.tier === 'paid' || me?.tier === 'admin'
+
   const [stems, setStems] = useState<Stem[]>([])
+  // For paid/admin users override isLocked — server still enforces on download
+  const visibleStems = hasFullAccess ? stems.map(s => ({ ...s, isLocked: false })) : stems
   const [pagination, setPagination] = useState({ page: 1, total: 0, pages: 1 })
   const [filters, setFilters] = useState<FilterOptions | null>(null)
   const [loading, setLoading] = useState(true)
@@ -367,14 +373,16 @@ export function LibraryClient() {
       `}</style>
 
       <div className="lw">
-        {/* Access strip */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: 'rgba(96,116,255,.055)', border: '1px solid rgba(96,116,255,.13)', borderRadius: 7, padding: '7px 14px', marginBottom: 10 }}>
-          <span style={{ fontSize: 12, color: 'var(--mu)', flex: 1 }}>
-            <strong style={{ color: 'var(--tx)' }}>Free Access</strong> — Browse and preview stems. Get{' '}
-            <Link href="/pricing" style={{ color: 'var(--acc)', fontWeight: 600 }}>Full Access</Link>
-            {' '}to unlock everything.
-          </span>
-        </div>
+        {/* Access strip — hidden for paid users */}
+        {!hasFullAccess && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: 'rgba(96,116,255,.055)', border: '1px solid rgba(96,116,255,.13)', borderRadius: 7, padding: '7px 14px', marginBottom: 10 }}>
+            <span style={{ fontSize: 12, color: 'var(--mu)', flex: 1 }}>
+              <strong style={{ color: 'var(--tx)' }}>Free Access</strong> — Browse and preview stems. Get{' '}
+              <Link href="/pricing" style={{ color: 'var(--acc)', fontWeight: 600 }}>Full Access</Link>
+              {' '}to unlock everything.
+            </span>
+          </div>
+        )}
 
         {/* Top bar */}
         <div className="lib-topbar">
@@ -488,10 +496,10 @@ export function LibraryClient() {
                 {loading && (
                   <tr><td colSpan={9} style={{ textAlign: 'center', padding: 40, color: 'var(--mu)' }}>Loading stems…</td></tr>
                 )}
-                {!loading && stems.length === 0 && (
+                {!loading && visibleStems.length === 0 && (
                   <tr><td colSpan={9} style={{ textAlign: 'center', padding: 40, color: 'var(--mu)' }}>No stems found</td></tr>
                 )}
-                {stems.map(s => {
+                {visibleStems.map(s => {
                   const isPlaying = currentId === (s.id as unknown as number) && playing
                   const genres = (s as unknown as { genres?: { name: string }[] }).genres
                   const genreStr = genres?.map((g: { name: string }) => g.name).join(', ') ?? ''
@@ -540,7 +548,7 @@ export function LibraryClient() {
 
         {/* Mobile card list */}
         <div className="lib-card-list">
-          {stems.map(s => {
+          {visibleStems.map(s => {
             const isPlaying = currentId === (s.id as unknown as number) && playing
             return (
               <div key={s.id} className={`stem-card${s.isLocked ? ' is-locked' : ''}`}>
@@ -600,8 +608,8 @@ export function LibraryClient() {
         <div className="p-center">
           <div className="p-controls">
             <button className="pc-btn" onClick={() => {
-              const idx = stems.findIndex(s => (s.id as unknown as number) === currentId)
-              if (idx > 0 && !stems[idx - 1].isLocked) togglePlay(stems[idx - 1])
+              const idx = visibleStems.findIndex(s => (s.id as unknown as number) === currentId)
+              if (idx > 0 && !visibleStems[idx - 1].isLocked) togglePlay(visibleStems[idx - 1])
             }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" /></svg>
             </button>
@@ -620,8 +628,8 @@ export function LibraryClient() {
               </button>
             </div>
             <button className="pc-btn" onClick={() => {
-              const idx = stems.findIndex(s => (s.id as unknown as number) === currentId)
-              if (idx !== -1 && idx < stems.length - 1 && !stems[idx + 1].isLocked) togglePlay(stems[idx + 1])
+              const idx = visibleStems.findIndex(s => (s.id as unknown as number) === currentId)
+              if (idx !== -1 && idx < visibleStems.length - 1 && !visibleStems[idx + 1].isLocked) togglePlay(visibleStems[idx + 1])
             }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
             </button>

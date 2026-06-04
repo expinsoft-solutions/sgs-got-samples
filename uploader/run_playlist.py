@@ -103,11 +103,24 @@ for t in tracks:
         "key":          "Unknown",
     })
 
+# ── Check review mode from Supabase (via API settings) ───────────────────────
+try:
+    settings_res = requests.get(f"{args.server}/api/admin/settings", timeout=10)
+    review_enabled = settings_res.json().get("reviewEnabled", False)
+except Exception:
+    review_enabled = None
+
 print(f"\n=== Pipeline ===")
 print(f"  Genre:      {args.genre}")
 print(f"  Job ID:     {JOB_ID}")
 print(f"  Server:     {args.server}")
 print(f"  Concurrent: {args.concurrent}")
+if review_enabled is None:
+    print(f"  Review:     (could not fetch — assuming OFF)")
+elif review_enabled:
+    print(f"  Review:     ON  → stems will hold in /admin/review until approved")
+else:
+    print(f"  Review:     OFF → stems auto-publish after job completes")
 print()
 
 # ── Patch upload functions to use args.server ─────────────────────────────────
