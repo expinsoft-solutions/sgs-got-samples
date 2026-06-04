@@ -13,13 +13,12 @@ export async function adminRoutes(app: FastifyInstance) {
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
 
     const [
-      totalStems, visibleStems, hiddenStems, pendingStems,
+      totalStems, visibleStems, pendingStems,
       totalUsers, freeUsers, paidUsers, adminUsers,
       downloadsToday, recentUploads,
     ] = await Promise.all([
       prisma.stem.count(),
       prisma.stem.count({ where: { isVisible: true } }),
-      prisma.stem.count({ where: { isVisible: false, isPendingPublish: false } }),
       prisma.stem.count({ where: { isPendingPublish: true } }),
       prisma.user.count(),
       prisma.user.count({ where: { tier: 'free' } }),
@@ -35,7 +34,7 @@ export async function adminRoutes(app: FastifyInstance) {
     ])
 
     return reply.send({
-      stems: { total: totalStems, visible: visibleStems, hidden: hiddenStems, pending: pendingStems },
+      stems: { total: totalStems, visible: visibleStems, pending: pendingStems },
       users: { total: totalUsers, free: freeUsers, paid: paidUsers, admin: adminUsers },
       downloadsToday,
       recentUploads: recentUploads.map(s => ({

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Exo_2, Poppins, Share_Tech_Mono } from 'next/font/google'
+import { AuthProvider } from '@/lib/auth-context'
 import './globals.css'
 
 const exo2 = Exo_2({
@@ -36,7 +37,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${exo2.variable} ${poppins.variable} ${shareTechMono.variable} h-full`}>
-      <body className="min-h-full flex flex-col" suppressHydrationWarning>{children}</body>
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   )
 }

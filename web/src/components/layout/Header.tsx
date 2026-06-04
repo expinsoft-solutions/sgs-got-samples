@@ -79,9 +79,10 @@ export function Header() {
                 style={{
                   fontFamily: 'var(--font-exo2)', fontSize: '0.8rem',
                   letterSpacing: '0.08em', color: 'var(--mu)',
-                  background: 'none', border: 'none', cursor: 'pointer',
+                  background: 'transparent', border: 'none', cursor: 'pointer',
                   maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   display: 'flex', alignItems: 'center', gap: 5,
+                  WebkitAppearance: 'none', WebkitTapHighlightColor: 'transparent', outline: 'none',
                 }}
               >
                 {me.name ?? me.email}
@@ -114,8 +115,9 @@ export function Header() {
                       display: 'block', width: '100%', textAlign: 'left',
                       padding: '10px 14px', fontSize: '0.8rem',
                       fontFamily: 'var(--font-exo2)', letterSpacing: '0.07em', textTransform: 'uppercase',
-                      color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer',
+                      color: '#ef4444', background: 'transparent', border: 'none', cursor: 'pointer',
                       borderTop: '1px solid var(--di)',
+                      WebkitAppearance: 'none', WebkitTapHighlightColor: 'transparent', outline: 'none',
                     }}>
                       Sign Out
                     </button>

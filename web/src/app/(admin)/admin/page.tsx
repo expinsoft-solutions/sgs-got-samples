@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:7626'
 
 type Stats = {
-  stems: { total: number; visible: number; hidden: number; pending: number }
+  stems: { total: number; visible: number; pending: number }
   users: { total: number; free: number; paid: number; admin: number }
   downloadsToday: number
   recentUploads: { id: string; title: string; artist: string; genre: string; createdAt: string }[]
@@ -48,8 +48,7 @@ export default function AdminDashboard() {
         </div>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <MiniStat label="Total" value={s?.stems.total ?? '—'} />
-          <MiniStat label="Visible" value={s?.stems.visible ?? '—'} accent />
-          <MiniStat label="Hidden" value={s?.stems.hidden ?? '—'} />
+          <MiniStat label="Published" value={s?.stems.visible ?? '—'} accent />
           <MiniStat label="Pending Review" value={s?.stems.pending ?? '—'} />
         </div>
       </div>

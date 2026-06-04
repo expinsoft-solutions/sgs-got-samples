@@ -1,6 +1,6 @@
 'use client'
 
-import { AuthProvider, useAuth } from '@/lib/auth-context'
+import { useAuth } from '@/lib/auth-context'
 
 function LoadingGate({ children }: { children: React.ReactNode }) {
   const { authLoading } = useAuth()
@@ -35,9 +35,5 @@ function LoadingGate({ children }: { children: React.ReactNode }) {
 }
 
 export function MainLayoutClient({ children }: { children: React.ReactNode }) {
-  return (
-    <AuthProvider>
-      <LoadingGate>{children}</LoadingGate>
-    </AuthProvider>
-  )
+  return <LoadingGate>{children}</LoadingGate>
 }

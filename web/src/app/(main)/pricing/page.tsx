@@ -43,11 +43,15 @@ export default function PricingPage() {
         <div className="phero" style={{ textAlign: 'center', padding: '24px 20px 20px' }}>
           <div style={{
             display: 'inline-block', fontFamily: 'var(--font-exo2)', fontSize: '.65rem',
-            letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--acc)',
-            border: '1px solid rgba(96,116,255,.22)', borderRadius: 20,
-            padding: '5px 16px', background: 'rgba(96,116,255,.07)', marginBottom: 14,
+            letterSpacing: '.18em', textTransform: 'uppercase',
+            color: hasFull ? '#4caf82' : 'var(--acc)',
+            border: `1px solid ${hasFull ? 'rgba(76,175,130,.3)' : 'rgba(96,116,255,.22)'}`,
+            borderRadius: 20,
+            padding: '5px 16px',
+            background: hasFull ? 'rgba(76,175,130,.08)' : 'rgba(96,116,255,.07)',
+            marginBottom: 14,
           }}>
-            Choose Your Access
+            {hasFull ? 'You already have Full Access — enjoy the complete library!' : 'Choose Your Access'}
           </div>
           <h1 style={{
             fontFamily: 'var(--font-exo2)', fontWeight: 200,
@@ -59,25 +63,6 @@ export default function PricingPage() {
             Pay once, no renewals. Get into the library your way.
           </p>
         </div>
-
-        {/* Already owned banner */}
-        {hasFull && (
-          <div style={{
-            maxWidth: 720, margin: '0 auto 20px', padding: '12px 18px',
-            background: 'rgba(76,175,130,.08)', border: '1px solid rgba(76,175,130,.25)',
-            borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10,
-          }}>
-            <span style={{ fontSize: 13, color: '#4caf82', fontWeight: 500 }}>
-              You already have Full Access — enjoy the complete library!
-            </span>
-            <Link href="/library" style={{
-              marginLeft: 'auto', fontSize: 12, color: '#4caf82',
-              borderBottom: '1px solid rgba(76,175,130,.4)', whiteSpace: 'nowrap',
-            }}>
-              Go to Library →
-            </Link>
-          </div>
-        )}
 
         {/* Cards */}
         <div className="pricing-grid" style={{
@@ -102,9 +87,11 @@ export default function PricingPage() {
               {li('Stream and preview available stems')}
             </ul>
             <div style={{ flex: 1 }} />
-            <Link href="/library" className="price-btn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              Explore Free Access
-            </Link>
+            {!hasFull && (
+              <Link href="/library" className="price-btn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                Explore Free Access
+              </Link>
+            )}
           </div>
 
           {/* Full */}
