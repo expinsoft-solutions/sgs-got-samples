@@ -67,7 +67,6 @@ export default function PricingPage() {
             background: 'rgba(76,175,130,.08)', border: '1px solid rgba(76,175,130,.25)',
             borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10,
           }}>
-            <span style={{ fontSize: 16 }}>✨</span>
             <span style={{ fontSize: 13, color: '#4caf82', fontWeight: 500 }}>
               You already have Full Access — enjoy the complete library!
             </span>

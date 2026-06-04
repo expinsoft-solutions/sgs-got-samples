@@ -231,7 +231,7 @@ export function VaultClient() {
           {(tier === 'paid' || tier === 'admin') && (
             <div style={{ marginTop: 14, padding: '10px 16px', background: 'rgba(35,201,154,.12)', border: '1px solid rgba(35,201,154,.25)', borderRadius: 10, display: 'inline-block' }}>
               <span style={{ fontSize: 13, color: '#23c99a' }}>
-                ✨ Premium Account Active — Enjoy your downloads!
+                Premium Account Active — Enjoy your downloads!
               </span>
             </div>
           )}
